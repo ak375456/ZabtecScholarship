@@ -1,35 +1,56 @@
 import 'package:flutter/material.dart'
-    show MaterialApp, Scaffold, Size, StatefulBuilder, TextFormField;
+    show MaterialApp, Scaffold, Size, StatefulBuilder;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:zabtec_scholarship/src/app.dart';
 import 'package:zabtec_scholarship/src/data/pakistan_districts.dart';
 import 'package:zabtec_scholarship/src/models.dart';
+import 'package:zabtec_scholarship/src/screens/auth_screen.dart';
 import 'package:zabtec_scholarship/src/screens/sections/documents_section.dart';
 import 'package:zabtec_scholarship/src/screens/sections/education_section.dart';
 import 'package:zabtec_scholarship/src/screens/sections/personal_section.dart';
 import 'package:zabtec_scholarship/src/screens/sections/services_section.dart';
-import 'package:zabtec_scholarship/src/screens/portal_screen.dart';
+import 'package:zabtec_scholarship/src/services/api_client.dart';
 import 'package:zabtec_scholarship/src/widgets/common.dart';
 
 void main() {
-  testWidgets('landing screen opens authentication', (tester) async {
+  testWidgets('app opens the unified backend login screen', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
     await tester.pumpWidget(const ScholarshipApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Your potential.\nOur scholarship.'), findsOneWidget);
-    expect(find.text('Begin application'), findsOneWidget);
-
-    await tester.tap(find.text('Begin application'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Welcome back'), findsOneWidget);
-    expect(find.text('Create account'), findsOneWidget);
+    expect(find.text('Sign in'), findsWidgets);
+    expect(find.text('Student'), findsOneWidget);
+    expect(find.text('HEC / Admin'), findsOneWidget);
   });
 
-  testWidgets('signup requests a password', (tester) async {
-    await tester.pumpWidget(const ScholarshipApp());
+  testWidgets('staff login switches from CNIC to email', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(
+          api: ApiClient(baseUrl: 'http://localhost:5000/api/v1'),
+          onAuthenticated: (_) {},
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Begin application'));
+
+    expect(find.text('CNIC'), findsOneWidget);
+    await tester.tap(find.text('HEC / Admin'));
+    await tester.pumpAndSettle();
+    expect(find.text('Email address'), findsOneWidget);
+  });
+
+  testWidgets('student signup requests password confirmation', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(
+          api: ApiClient(baseUrl: 'http://localhost:5000/api/v1'),
+          onAuthenticated: (_) {},
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text('Create account'));
     await tester.pumpAndSettle();
@@ -38,34 +59,25 @@ void main() {
     expect(find.text('Confirm password'), findsOneWidget);
   });
 
-  testWidgets('education starts with Pakistani demo qualifications', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
+  testWidgets('education starts with one backend entry form', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: EducationSection(onSaved: () {}, onRequirementsChanged: (_) {}),
+          body: EducationSection(
+            application: null,
+            onSaved: (_) async {},
+            onRequirementsChanged: (_) {},
+          ),
         ),
       ),
     );
     await tester.pumpAndSettle();
 
     expect(find.text('Qualification 1'), findsOneWidget);
-    expect(find.text('Qualification 2'), findsOneWidget);
-    expect(find.text('Government Girls High School, Lahore'), findsOneWidget);
-    expect(find.text('Punjab College for Women, Lahore'), findsOneWidget);
     expect(find.text('Add another qualification'), findsOneWidget);
-    expect(find.text('Transcript / result card'), findsNothing);
   });
 
-  testWidgets('documents are generated from education selections', (
-    tester,
-  ) async {
+  testWidgets('documents render backend document slots', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -77,7 +89,10 @@ void main() {
                 status: 'Completed',
               ),
             ],
-            onSaved: () {},
+            documents: const [],
+            onUpload: (_, _) async {},
+            onDelete: (_) async {},
+            onSaved: () async {},
           ),
         ),
       ),
@@ -86,82 +101,16 @@ void main() {
 
     expect(find.text('CNIC front'), findsOneWidget);
     expect(find.text('CNIC back'), findsOneWidget);
-    expect(
-      find.text('BS / Bachelor’s transcript / result card'),
-      findsOneWidget,
-    );
-    expect(find.text('BS degree / provisional certificate'), findsOneWidget);
-    expect(find.text('Demo placeholder — upload later'), findsWidgets);
+    expect(find.text('Bachelor’s certificate'), findsOneWidget);
   });
 
-  testWidgets('mobile portal uses a left menu and welcome empty state', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(390, 844);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-    const account = Account(
-      fullName: 'Ayesha Khan',
-      cnic: '3520212345671',
-      phone: '+923311234567',
-      email: 'ayesha@example.com',
-      password: 'Scholar1',
-    );
-
-    await tester.pumpWidget(
-      MaterialApp(
-        home: PortalScreen(account: account, onLogout: () {}),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Welcome, Ayesha'), findsOneWidget);
-    expect(find.text('No submitted application yet'), findsOneWidget);
-    expect(find.byTooltip('Open menu'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('Open menu'));
-    await tester.pumpAndSettle();
-    expect(find.text('Profile'), findsOneWidget);
-    expect(find.text('Experience'), findsOneWidget);
-    expect(find.text('Documents'), findsOneWidget);
-    expect(find.text('Services'), findsOneWidget);
-  });
-
-  testWidgets(
-    'services stay locked until required profile sections are saved',
-    (tester) async {
-      final progress = ApplicationProgress()
-        ..personal = true
-        ..education = true;
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: ServicesSection(
-              account: _account,
-              progress: progress,
-              receipt: null,
-              onPaymentCompleted: (_) {},
-              onOpenSection: (_) {},
-            ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('Services locked for now'), findsOneWidget);
-      expect(find.text('Family'), findsOneWidget);
-      expect(find.text('Documents'), findsOneWidget);
-      expect(find.text('Pay PKR 1,500'), findsNothing);
-    },
-  );
-
-  testWidgets('services unlock after dummy card payment', (tester) async {
+  testWidgets('services unlock after backend payment callback', (tester) async {
     final progress = ApplicationProgress()
       ..personal = true
       ..family = true
       ..education = true
+      ..experience = true
+      ..research = true
       ..documents = true;
     ActivationReceipt? receipt;
 
@@ -171,13 +120,22 @@ void main() {
           body: StatefulBuilder(
             builder: (context, setState) => ServicesSection(
               account: _account,
+              application: null,
               progress: progress,
               receipt: receipt,
               onPaymentCompleted: (value) => setState(() {
                 receipt = value;
-                progress.servicePaymentComplete = true;
+                progress.payment = true;
               }),
-              onOpenSection: (_) {},
+              onPayActivation: ({method = 'bank_transfer'}) async =>
+                  ActivationReceipt(
+                    receiptNumber: '2606170000303',
+                    account: _account,
+                    issuedAt: DateTime(2026, 6, 25),
+                    amountPkr: 1500,
+                    paymentMethod: method,
+                    cardLast4: '',
+                  ),
             ),
           ),
         ),
@@ -185,36 +143,26 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Profile activation payment'), findsOneWidget);
-    await tester.enterText(
-      find.byType(TextFormField).at(1),
-      '4242424242424242',
-    );
-    await tester.enterText(find.byType(TextFormField).at(2), '12/30');
-    await tester.enterText(find.byType(TextFormField).at(3), '123');
-    await tester.ensureVisible(find.text('Pay PKR 1,500'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Pay PKR 1,500'));
+    expect(find.text('Registration fee challan'), findsWidgets);
+    await tester.ensureVisible(find.text('Generate challan'));
+    await tester.tap(find.text('Generate challan'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Profile active'), findsOneWidget);
-    expect(find.text('Save receipt PDF'), findsOneWidget);
+    expect(find.text('Bank challan generated'), findsOneWidget);
+    expect(find.text('Save challan PDF'), findsOneWidget);
   });
 
   testWidgets('profile separates permanent and current address', (
     tester,
   ) async {
-    const account = Account(
-      fullName: 'Ayesha Khan',
-      cnic: '3520212345671',
-      phone: '+923311234567',
-      email: 'ayesha@example.com',
-      password: 'Scholar1',
-    );
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: PersonalSection(account: account, onSaved: () {}),
+          body: PersonalSection(
+            account: _account,
+            application: null,
+            onSaved: (_) async {},
+          ),
         ),
       ),
     );
@@ -226,7 +174,6 @@ void main() {
       'Current address is the same as permanent address',
     );
     await tester.ensureVisible(sameAddress);
-    await tester.pumpAndSettle();
     await tester.tap(sameAddress);
     await tester.pumpAndSettle();
     expect(find.text('Current address'), findsOneWidget);
@@ -237,18 +184,19 @@ void main() {
     const Size(800, 600),
     const Size(1440, 900),
   ]) {
-    testWidgets('renders without overflow at ${size.width.toInt()} px', (
+    testWidgets('login renders without overflow at ${size.width.toInt()} px', (
       tester,
     ) async {
       tester.view.physicalSize = size;
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
+      SharedPreferences.setMockInitialValues({});
 
       await tester.pumpWidget(const ScholarshipApp());
       await tester.pumpAndSettle();
 
-      expect(find.text('Begin application'), findsOneWidget);
+      expect(find.text('Sign in'), findsWidgets);
     });
   }
 
@@ -269,8 +217,8 @@ void main() {
       account: _account,
       issuedAt: DateTime(2026, 6, 25),
       amountPkr: 1500,
-      paymentMethod: 'Card payment',
-      cardLast4: '4242',
+      paymentMethod: 'bank_transfer',
+      cardLast4: '',
     );
 
     expect(receipt.amountLabel, 'PKR 1,500');
@@ -291,9 +239,10 @@ void main() {
 }
 
 const _account = Account(
+  id: 'student-1',
   fullName: 'Ayesha Khan',
   cnic: '3520212345671',
   phone: '+923311234567',
   email: 'ayesha@example.com',
-  password: 'Scholar1',
+  role: 'student',
 );

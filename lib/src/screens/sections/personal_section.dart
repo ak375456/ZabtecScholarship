@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
-import '../../data/demo_profile.dart';
 import '../../data/pakistan_districts.dart';
 import '../../models.dart';
 import '../../theme.dart';
@@ -11,11 +9,13 @@ class PersonalSection extends StatefulWidget {
   const PersonalSection({
     super.key,
     required this.account,
+    required this.application,
     required this.onSaved,
   });
 
   final Account account;
-  final VoidCallback onSaved;
+  final ScholarshipApplication? application;
+  final Future<void> Function(Map<String, dynamic> payload) onSaved;
 
   @override
   State<PersonalSection> createState() => _PersonalSectionState();
@@ -25,6 +25,9 @@ class _PersonalSectionState extends State<PersonalSection>
     with AutomaticKeepAliveClientMixin {
   final _key = GlobalKey<FormState>();
   final _dob = TextEditingController();
+  final _permanentAddress = TextEditingController();
+  final _currentAddress = TextEditingController();
+  final _disabilityDetails = TextEditingController();
   String? _gender;
   String? _marital;
   String? _domicileRegion;
@@ -33,8 +36,9 @@ class _PersonalSectionState extends State<PersonalSection>
   String? _permanentDistrict;
   String? _currentRegion;
   String? _currentDistrict;
-  String? _disability;
+  bool _hasDisability = false;
   bool _sameAddress = true;
+  bool _saving = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -42,22 +46,21 @@ class _PersonalSectionState extends State<PersonalSection>
   @override
   void initState() {
     super.initState();
-    if (!DemoProfile.enabled) return;
-    _gender = DemoProfile.gender;
-    _dob.text = DemoProfile.dob;
-    _marital = DemoProfile.maritalStatus;
-    _disability = DemoProfile.disabilityStatus;
-    _domicileRegion = DemoProfile.domicileRegion;
-    _domicileDistrict = DemoProfile.domicileDistrict;
-    _permanentRegion = DemoProfile.permanentRegion;
-    _permanentDistrict = DemoProfile.permanentDistrict;
-    _currentRegion = DemoProfile.currentRegion;
-    _currentDistrict = DemoProfile.currentDistrict;
+    _hydrate();
+  }
+
+  @override
+  void didUpdateWidget(covariant PersonalSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.application?.id != widget.application?.id) _hydrate();
   }
 
   @override
   void dispose() {
     _dob.dispose();
+    _permanentAddress.dispose();
+    _currentAddress.dispose();
+    _disabilityDetails.dispose();
     super.dispose();
   }
 
@@ -78,7 +81,7 @@ class _PersonalSectionState extends State<PersonalSection>
                   eyebrow: 'Your profile',
                   title: 'Personal information',
                   description:
-                      'Account identity is locked. Complete the remaining profile and address information below.',
+                      'Your account identity is secured. Complete the remaining profile and address information below.',
                 ),
                 const SizedBox(height: 24),
                 FormCard(
@@ -107,13 +110,17 @@ class _PersonalSectionState extends State<PersonalSection>
                         decoration: const InputDecoration(
                           labelText: 'Gender / sex',
                         ),
-                        items: ['Male', 'Female', 'Other', 'Prefer not to say']
+                        items: const ['Male', 'Female', 'Other']
                             .map(
-                              (v) => DropdownMenuItem(value: v, child: Text(v)),
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(value),
+                              ),
                             )
                             .toList(),
-                        onChanged: (v) => setState(() => _gender = v),
-                        validator: (v) => v == null ? 'Select an option' : null,
+                        onChanged: (value) => setState(() => _gender = value),
+                        validator: (value) =>
+                            value == null ? 'Select an option' : null,
                       ),
                       TextFormField(
                         controller: _dob,
@@ -124,67 +131,40 @@ class _PersonalSectionState extends State<PersonalSection>
                           hintText: 'DD/MM/YYYY',
                           suffixIcon: Icon(Icons.calendar_today_outlined),
                         ),
-                        validator: (v) => requiredText(v, 'Date of birth'),
+                        validator: (value) =>
+                            requiredText(value, 'Date of birth'),
                       ),
                       DropdownButtonFormField<String>(
                         initialValue: _marital,
                         decoration: const InputDecoration(
                           labelText: 'Marital status',
                         ),
-                        items: ['Single', 'Married', 'Divorced', 'Widowed']
-                            .map(
-                              (v) => DropdownMenuItem(value: v, child: Text(v)),
-                            )
-                            .toList(),
-                        onChanged: (v) => setState(() => _marital = v),
-                        validator: (v) => v == null ? 'Select an option' : null,
-                      ),
-                      TextFormField(
-                        initialValue: 'Pakistani',
-                        readOnly: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Nationality',
-                        ),
-                      ),
-                      TextFormField(
-                        initialValue: '',
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                          labelText: 'Other nationality (optional)',
-                          hintText: 'Only if you hold dual nationality',
-                        ),
-                      ),
-                      TextFormField(
-                        initialValue: '',
-                        textCapitalization: TextCapitalization.characters,
-                        inputFormatters: [LengthLimitingTextInputFormatter(20)],
-                        decoration: const InputDecoration(
-                          labelText: 'Passport number (optional)',
-                        ),
-                      ),
-                      DropdownButtonFormField<String>(
-                        initialValue: _disability,
-                        decoration: const InputDecoration(
-                          labelText: 'Disability status',
-                        ),
-                        isExpanded: true,
                         items:
-                            [
-                                  'No disability',
-                                  'Yes — physical',
-                                  'Yes — visual',
-                                  'Yes — hearing',
-                                  'Yes — other',
-                                ]
+                            const ['Single', 'Married', 'Divorced', 'Widowed']
                                 .map(
-                                  (v) => DropdownMenuItem(
-                                    value: v,
-                                    child: Text(v),
+                                  (value) => DropdownMenuItem(
+                                    value: value,
+                                    child: Text(value),
                                   ),
                                 )
                                 .toList(),
-                        onChanged: (v) => setState(() => _disability = v),
-                        validator: (v) => v == null ? 'Select an option' : null,
+                        onChanged: (value) => setState(() => _marital = value),
+                      ),
+                      SwitchListTile(
+                        value: _hasDisability,
+                        onChanged: (value) =>
+                            setState(() => _hasDisability = value),
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Has disability'),
+                      ),
+                      TextFormField(
+                        controller: _disabilityDetails,
+                        enabled: _hasDisability,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          labelText: 'Disability details',
+                          hintText: 'Optional',
+                        ),
                       ),
                       DropdownButtonFormField<String>(
                         initialValue: _domicileRegion,
@@ -193,12 +173,13 @@ class _PersonalSectionState extends State<PersonalSection>
                           labelText: 'Domicile province / territory',
                         ),
                         items: _regionItems(),
-                        onChanged: (v) => setState(() {
-                          _domicileRegion = v;
+                        onChanged: (value) => setState(() {
+                          _domicileRegion = value;
                           _domicileDistrict = null;
                         }),
-                        validator: (v) =>
-                            v == null ? 'Select a province / territory' : null,
+                        validator: (value) => value == null
+                            ? 'Select a province / territory'
+                            : null,
                       ),
                       DropdownButtonFormField<String>(
                         key: ValueKey('domicile-$_domicileRegion'),
@@ -210,9 +191,11 @@ class _PersonalSectionState extends State<PersonalSection>
                         items: _districtItems(_domicileRegion),
                         onChanged: _domicileRegion == null
                             ? null
-                            : (v) => setState(() => _domicileDistrict = v),
-                        validator: (v) =>
-                            v == null ? 'Select your domicile district' : null,
+                            : (value) =>
+                                  setState(() => _domicileDistrict = value),
+                        validator: (value) => value == null
+                            ? 'Select your domicile district'
+                            : null,
                       ),
                     ],
                   ),
@@ -222,7 +205,7 @@ class _PersonalSectionState extends State<PersonalSection>
                   title: 'Permanent address',
                   icon: Icons.home_outlined,
                   child: _addressFields(
-                    keyPrefix: 'permanent',
+                    controller: _permanentAddress,
                     region: _permanentRegion,
                     district: _permanentDistrict,
                     onRegionChanged: (value) => setState(() {
@@ -249,9 +232,6 @@ class _PersonalSectionState extends State<PersonalSection>
                       'Current address is the same as permanent address',
                       style: TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    subtitle: const Text(
-                      'Untick this if you currently live somewhere else.',
-                    ),
                   ),
                 ),
                 if (!_sameAddress) ...[
@@ -260,7 +240,7 @@ class _PersonalSectionState extends State<PersonalSection>
                     title: 'Current address',
                     icon: Icons.location_on_outlined,
                     child: _addressFields(
-                      keyPrefix: 'current',
+                      controller: _currentAddress,
                       region: _currentRegion,
                       district: _currentDistrict,
                       onRegionChanged: (value) => setState(() {
@@ -280,9 +260,9 @@ class _PersonalSectionState extends State<PersonalSection>
                         ? double.infinity
                         : 210,
                     child: PrimaryButton(
-                      label: 'Save profile',
+                      label: _saving ? 'Saving...' : 'Save profile',
                       icon: Icons.check_rounded,
-                      onPressed: _save,
+                      onPressed: _saving ? null : _save,
                     ),
                   ),
                 ),
@@ -296,7 +276,7 @@ class _PersonalSectionState extends State<PersonalSection>
   }
 
   Widget _addressFields({
-    required String keyPrefix,
+    required TextEditingController controller,
     required String? region,
     required String? district,
     required ValueChanged<String?> onRegionChanged,
@@ -304,15 +284,14 @@ class _PersonalSectionState extends State<PersonalSection>
   }) => Column(
     children: [
       TextFormField(
-        key: ValueKey('$keyPrefix-street'),
-        initialValue: _demoAddressValue(keyPrefix, 'street'),
-        maxLines: 2,
+        controller: controller,
+        maxLines: 3,
         textCapitalization: TextCapitalization.sentences,
         decoration: const InputDecoration(
-          labelText: 'Street address',
-          hintText: 'House, street and area',
+          labelText: 'Full address',
+          hintText: 'House, street, area, city and postal code',
         ),
-        validator: (v) => requiredText(v, 'Street address'),
+        validator: (value) => requiredText(value, 'Full address'),
       ),
       const SizedBox(height: 16),
       FormGrid(
@@ -325,35 +304,17 @@ class _PersonalSectionState extends State<PersonalSection>
             ),
             items: _regionItems(),
             onChanged: onRegionChanged,
-            validator: (v) =>
-                v == null ? 'Select a province / territory' : null,
+            validator: (value) =>
+                value == null ? 'Select a province / territory' : null,
           ),
           DropdownButtonFormField<String>(
-            key: ValueKey('$keyPrefix-district-$region'),
+            key: ValueKey('address-district-$region'),
             initialValue: district,
             isExpanded: true,
             decoration: const InputDecoration(labelText: 'District'),
             items: _districtItems(region),
             onChanged: region == null ? null : onDistrictChanged,
-            validator: (v) => v == null ? 'Select a district' : null,
-          ),
-          TextFormField(
-            key: ValueKey('$keyPrefix-city'),
-            initialValue: _demoAddressValue(keyPrefix, 'city'),
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(labelText: 'City'),
-            validator: (v) => requiredText(v, 'City'),
-          ),
-          TextFormField(
-            key: ValueKey('$keyPrefix-postal'),
-            initialValue: _demoAddressValue(keyPrefix, 'postal'),
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              DigitsOnlyFormatter(),
-              LengthLimitingTextInputFormatter(5),
-            ],
-            decoration: const InputDecoration(labelText: 'Postal code'),
-            validator: (v) => requiredText(v, 'Postal code'),
+            validator: (value) => value == null ? 'Select a district' : null,
           ),
         ],
       ),
@@ -380,25 +341,72 @@ class _PersonalSectionState extends State<PersonalSection>
           .toList();
 
   Future<void> _selectDob() async {
-    final date = await pickAppDate(context);
+    final initial = parseAppDate(_dob.text) ?? DateTime(2000);
+    final date = await pickAppDate(context, initial: initial);
     if (date != null) _dob.text = formatDate(date);
   }
 
-  void _save() {
-    if (_key.currentState!.validate()) widget.onSaved();
+  Future<void> _save() async {
+    if (!_key.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      final dob = parseAppDate(_dob.text);
+      final currentRegion = _sameAddress ? _permanentRegion : _currentRegion;
+      final currentDistrict = _sameAddress
+          ? _permanentDistrict
+          : _currentDistrict;
+      final currentAddress = _sameAddress
+          ? _permanentAddress.text
+          : _currentAddress.text;
+      await widget.onSaved({
+        'dateOfBirth': dob?.toIso8601String(),
+        'gender': _gender?.toLowerCase(),
+        'maritalStatus': _marital,
+        'hasDisability': _hasDisability,
+        'disabilityDetails': _hasDisability
+            ? _disabilityDetails.text.trim()
+            : '',
+        'domicileProvince': _domicileRegion,
+        'domicileDistrict': _domicileDistrict,
+        'permanentAddress': {
+          'province': _permanentRegion,
+          'district': _permanentDistrict,
+          'fullAddress': _permanentAddress.text.trim(),
+        },
+        'currentAddress': {
+          'province': currentRegion,
+          'district': currentDistrict,
+          'fullAddress': currentAddress.trim(),
+        },
+      });
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
-  String? _demoAddressValue(String prefix, String field) {
-    if (!DemoProfile.enabled) return null;
-    return switch ((prefix, field)) {
-      ('permanent', 'street') => DemoProfile.permanentStreet,
-      ('permanent', 'city') => DemoProfile.permanentCity,
-      ('permanent', 'postal') => DemoProfile.permanentPostalCode,
-      ('current', 'street') => DemoProfile.currentStreet,
-      ('current', 'city') => DemoProfile.currentCity,
-      ('current', 'postal') => DemoProfile.currentPostalCode,
-      _ => null,
-    };
+  void _hydrate() {
+    final personal = widget.application?.personal ?? const {};
+    final permanent = _asMap(personal['permanentAddress']);
+    final current = _asMap(personal['currentAddress']);
+    _dob.text = formatBackendDate(personal['dateOfBirth']);
+    _gender = _label(personal['gender']);
+    _marital = _stringOrNull(personal['maritalStatus']);
+    _hasDisability = personal['hasDisability'] == true;
+    _disabilityDetails.text =
+        _stringOrNull(personal['disabilityDetails']) ?? '';
+    _domicileRegion = _stringOrNull(personal['domicileProvince']);
+    _domicileDistrict = _stringOrNull(personal['domicileDistrict']);
+    _permanentRegion = _stringOrNull(permanent['province']);
+    _permanentDistrict = _stringOrNull(permanent['district']);
+    _permanentAddress.text = _stringOrNull(permanent['fullAddress']) ?? '';
+    _currentRegion = _stringOrNull(current['province']);
+    _currentDistrict = _stringOrNull(current['district']);
+    _currentAddress.text = _stringOrNull(current['fullAddress']) ?? '';
+    _sameAddress =
+        _currentAddress.text.isEmpty ||
+        (_currentAddress.text == _permanentAddress.text &&
+            _currentRegion == _permanentRegion &&
+            _currentDistrict == _permanentDistrict);
   }
 }
 
@@ -416,4 +424,23 @@ class _LockedField extends StatelessWidget {
       suffixIcon: const Icon(Icons.lock_outline_rounded, size: 18),
     ),
   );
+}
+
+Map<String, dynamic> _asMap(Object? value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+  return const {};
+}
+
+String? _stringOrNull(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
+}
+
+String? _label(Object? value) {
+  final text = _stringOrNull(value);
+  if (text == null) return null;
+  return text[0].toUpperCase() + text.substring(1).toLowerCase();
 }

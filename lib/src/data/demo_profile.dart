@@ -4,13 +4,15 @@ import 'dart:typed_data';
 import '../models.dart';
 
 abstract final class DemoProfile {
-  static const enabled = bool.fromEnvironment('DEMO_DATA', defaultValue: true);
+  static const enabled = bool.fromEnvironment('DEMO_DATA', defaultValue: false);
 
   static const account = Account(
+    id: 'demo-student',
     fullName: 'Ayesha Fatima Khan',
     cnic: '3520212345671',
     phone: '+923331234567',
     email: 'ayesha.fatima@demo.pk',
+    role: 'student',
     password: 'Scholar1',
   );
 

@@ -1,21 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../data/demo_profile.dart';
 import '../models.dart';
+import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+
+const _termsUrl = 'https://akbaruddin678.github.io/ZabtectTermCondition/';
+const _privacyUrl = 'https://akbaruddin678.github.io/ZabtecprivacyPolicy/';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({
     super.key,
-    required this.existingAccount,
-    required this.onRegistered,
-    required this.onLogin,
+    required this.api,
+    required this.onAuthenticated,
   });
-  final Account? existingAccount;
-  final ValueChanged<Account> onRegistered;
-  final ValueChanged<Account> onLogin;
+
+  final ApiClient api;
+  final ValueChanged<AuthSession> onAuthenticated;
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -30,36 +33,28 @@ class _AuthScreenState extends State<AuthScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _confirmPassword = TextEditingController();
-  final _loginCnic = TextEditingController();
+  final _loginIdentifier = TextEditingController();
   final _loginPassword = TextEditingController();
-  Account? _localAccount;
   bool _signup = false;
+  bool _staffLogin = false;
   bool _showSignupPassword = false;
   bool _showConfirmPassword = false;
   bool _showLoginPassword = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _localAccount =
-        widget.existingAccount ??
-        (DemoProfile.enabled ? DemoProfile.account : null);
-    if (DemoProfile.enabled) _prefillDemoAuth();
-  }
+  bool _busy = false;
 
   @override
   void dispose() {
-    for (final c in [
+    for (final controller in [
       _name,
       _cnic,
       _phone,
       _email,
       _password,
       _confirmPassword,
-      _loginCnic,
+      _loginIdentifier,
       _loginPassword,
     ]) {
-      c.dispose();
+      controller.dispose();
     }
     super.dispose();
   }
@@ -94,32 +89,26 @@ class _AuthScreenState extends State<AuthScreen> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Row(
-                                children: [
-                                  IconButton(
-                                    onPressed: () => Navigator.pop(context),
-                                    icon: const Icon(Icons.arrow_back_rounded),
-                                    tooltip: 'Back',
-                                  ),
-                                  const Spacer(),
-                                  const BrandMark(compact: true),
-                                ],
+                              const Align(
+                                alignment: Alignment.centerRight,
+                                child: BrandMark(compact: true),
                               ),
-                              const SizedBox(height: 30),
+                              const SizedBox(height: 34),
                               AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 320),
-                                transitionBuilder: (child, animation) =>
-                                    FadeTransition(
-                                      opacity: animation,
-                                      child: SlideTransition(
-                                        position: Tween(
-                                          begin: const Offset(.04, 0),
-                                          end: Offset.zero,
-                                        ).animate(animation),
-                                        child: child,
-                                      ),
-                                    ),
+                                duration: const Duration(milliseconds: 260),
+                                switchInCurve: Curves.easeOutCubic,
                                 child: _signup ? _signupForm() : _loginForm(),
+                              ),
+                              const SizedBox(height: 20),
+                              _LegalLinks(
+                                onTerms: () => _openLegalPage(
+                                  _termsUrl,
+                                  'Terms & Conditions',
+                                ),
+                                onPrivacy: () => _openLegalPage(
+                                  _privacyUrl,
+                                  'Privacy Policy',
+                                ),
                               ),
                             ],
                           ),
@@ -137,32 +126,62 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Widget _loginForm() => Form(
-    key: const ValueKey('login'),
+    key: const ValueKey('login-form'),
     child: Form(
       key: _loginKey,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Welcome back', style: Theme.of(context).textTheme.displaySmall),
+          Text('Sign in', style: Theme.of(context).textTheme.displaySmall),
           const SizedBox(height: 10),
           const Text(
-            'Sign in securely with your CNIC and password.',
+            'Students use CNIC. HEC and admin users use email.',
             style: TextStyle(color: AppColors.muted),
           ),
-          const SizedBox(height: 28),
-          TextFormField(
-            controller: _loginCnic,
-            keyboardType: TextInputType.number,
-            inputFormatters: [
-              DigitsOnlyFormatter(),
-              LengthLimitingTextInputFormatter(13),
+          const SizedBox(height: 24),
+          SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                value: false,
+                icon: Icon(Icons.badge_outlined),
+                label: Text('Student'),
+              ),
+              ButtonSegment(
+                value: true,
+                icon: Icon(Icons.admin_panel_settings_outlined),
+                label: Text('HEC / Admin'),
+              ),
             ],
-            decoration: const InputDecoration(
-              labelText: 'CNIC',
-              hintText: '3520212345671',
-              prefixIcon: Icon(Icons.badge_outlined),
+            selected: {_staffLogin},
+            onSelectionChanged: _busy
+                ? null
+                : (value) => setState(() {
+                    _staffLogin = value.first;
+                    _loginIdentifier.clear();
+                  }),
+          ),
+          const SizedBox(height: 18),
+          TextFormField(
+            controller: _loginIdentifier,
+            keyboardType: _staffLogin
+                ? TextInputType.emailAddress
+                : TextInputType.number,
+            autofillHints: _staffLogin
+                ? const [AutofillHints.email]
+                : const [AutofillHints.username],
+            inputFormatters: _staffLogin
+                ? null
+                : [DigitsOnlyFormatter(), LengthLimitingTextInputFormatter(13)],
+            decoration: InputDecoration(
+              labelText: _staffLogin ? 'Email address' : 'CNIC',
+              hintText: _staffLogin ? 'admin@zabtec.edu.pk' : '3520212345671',
+              prefixIcon: Icon(
+                _staffLogin ? Icons.email_outlined : Icons.badge_outlined,
+              ),
+              counterText: '',
             ),
-            validator: validateCnic,
+            maxLength: _staffLogin ? null : 13,
+            validator: _staffLogin ? validateEmail : validateCnic,
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -183,19 +202,20 @@ class _AuthScreenState extends State<AuthScreen> {
                 tooltip: _showLoginPassword ? 'Hide password' : 'Show password',
               ),
             ),
-            validator: (v) => requiredText(v, 'Password'),
+            validator: (value) => requiredText(value, 'Password'),
+            onFieldSubmitted: (_) => _login(),
           ),
           const SizedBox(height: 22),
           PrimaryButton(
-            label: 'Sign in',
+            label: _busy ? 'Signing in...' : 'Sign in',
             icon: Icons.arrow_forward_rounded,
-            onPressed: _login,
+            onPressed: _busy ? null : _login,
           ),
           const SizedBox(height: 18),
           _SwitchPrompt(
-            prefix: 'New to the scholarship portal?',
+            prefix: 'Student applicant?',
             action: 'Create account',
-            onTap: () => setState(() => _signup = true),
+            onTap: _busy ? null : () => setState(() => _signup = true),
           ),
         ],
       ),
@@ -208,15 +228,15 @@ class _AuthScreenState extends State<AuthScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Create your account',
+          'Create student account',
           style: Theme.of(context).textTheme.displaySmall,
         ),
         const SizedBox(height: 10),
         const Text(
-          'Use information exactly as it appears on your CNIC.',
+          'Admin and HEC accounts are created from the admin portal.',
           style: TextStyle(color: AppColors.muted),
         ),
-        const SizedBox(height: 26),
+        const SizedBox(height: 24),
         FormGrid(
           children: [
             TextFormField(
@@ -228,12 +248,10 @@ class _AuthScreenState extends State<AuthScreen> {
                 hintText: 'Name as shown on CNIC',
                 prefixIcon: Icon(Icons.person_outline),
               ),
-              validator: (v) {
-                final required = requiredText(v, 'Full name');
+              validator: (value) {
+                final required = requiredText(value, 'Full name');
                 if (required != null) return required;
-                if (v!.trim().split(RegExp(r'\s+')).length < 2) {
-                  return 'Enter your complete name';
-                }
+                if (value!.trim().length < 3) return 'Enter your complete name';
                 return null;
               },
             ),
@@ -266,7 +284,6 @@ class _AuthScreenState extends State<AuthScreen> {
                 hintText: '3311234567',
                 prefixText: '+92  ',
                 prefixIcon: Icon(Icons.phone_outlined),
-                helperText: '3-digit network + 7-digit number',
               ),
               validator: validatePakPhone,
             ),
@@ -326,78 +343,134 @@ class _AuthScreenState extends State<AuthScreen> {
                       : 'Show password',
                 ),
               ),
-              validator: (v) {
-                if (v != _password.text) return 'Passwords do not match';
-                return requiredText(v, 'Password confirmation');
+              validator: (value) {
+                final required = requiredText(value, 'Password confirmation');
+                if (required != null) return required;
+                if (value != _password.text) return 'Passwords do not match';
+                return null;
               },
             ),
           ],
         ),
         const SizedBox(height: 22),
         PrimaryButton(
-          label: 'Create account',
+          label: _busy ? 'Creating account...' : 'Create account',
           icon: Icons.check_rounded,
-          onPressed: _register,
+          onPressed: _busy ? null : _register,
         ),
         const SizedBox(height: 18),
         _SwitchPrompt(
           prefix: 'Already registered?',
           action: 'Sign in',
-          onTap: () => setState(() => _signup = false),
+          onTap: _busy ? null : () => setState(() => _signup = false),
         ),
       ],
     ),
   );
 
-  void _register() {
+  Future<void> _register() async {
     if (!_signupKey.currentState!.validate()) return;
-    final account = Account(
-      fullName: _name.text.trim(),
-      cnic: _cnic.text,
-      phone: '+92${_phone.text}',
-      email: _email.text.trim(),
-      password: _password.text,
-    );
-    widget.onRegistered(account);
-    _localAccount = account;
-    _loginCnic.text = account.cnic;
-    setState(() => _signup = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Account created. Sign in to continue.')),
-    );
+    setState(() => _busy = true);
+    try {
+      final session = await widget.api.register(
+        fullName: _name.text.trim(),
+        cnic: _cnic.text,
+        email: _email.text.trim(),
+        phone: '+92${_phone.text}',
+        password: _password.text,
+      );
+      widget.onAuthenticated(session);
+    } on ApiException catch (error) {
+      _showError(error.message);
+    } catch (error) {
+      _showConnectionError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
-  void _login() {
+  Future<void> _login() async {
     if (!_loginKey.currentState!.validate()) return;
-    final account = _localAccount;
-    if (account == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No account found. Please create an account first.'),
-        ),
+    setState(() => _busy = true);
+    try {
+      final session = await widget.api.login(
+        cnic: _staffLogin ? null : _loginIdentifier.text.trim(),
+        email: _staffLogin ? _loginIdentifier.text.trim() : null,
+        password: _loginPassword.text,
       );
-      return;
+      widget.onAuthenticated(session);
+    } on ApiException catch (error) {
+      _showError(error.message);
+    } catch (error) {
+      _showConnectionError(error);
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
-    if (_loginCnic.text != account.cnic ||
-        _loginPassword.text != account.password) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('CNIC or password does not match.')),
-      );
-      return;
-    }
-    widget.onLogin(account);
   }
 
-  void _prefillDemoAuth() {
-    final account = _localAccount ?? DemoProfile.account;
-    _name.text = account.fullName;
-    _cnic.text = account.cnic;
-    _phone.text = DemoProfile.signupPhoneDigits;
-    _email.text = account.email;
-    _password.text = account.password;
-    _confirmPassword.text = account.password;
-    _loginCnic.text = account.cnic;
-    _loginPassword.text = account.password;
+  Future<void> _openLegalPage(String url, String label) async {
+    try {
+      final opened = await launchUrl(Uri.parse(url));
+      if (!opened) _showError('Could not open $label. Please try again.');
+    } catch (_) {
+      _showError('Could not open $label. Please try again.');
+    }
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), duration: const Duration(seconds: 8)),
+    );
+  }
+
+  void _showConnectionError(Object error) {
+    final details = error.toString().trim();
+    _showError(
+      'Could not connect to the API at ${widget.api.baseUrl}. Please check your internet connection or ask support to confirm the live backend is available.${details.isEmpty ? '' : ' Details: $details'}',
+    );
+  }
+}
+
+class _LegalLinks extends StatelessWidget {
+  const _LegalLinks({required this.onTerms, required this.onPrivacy});
+
+  final VoidCallback onTerms;
+  final VoidCallback onPrivacy;
+
+  @override
+  Widget build(BuildContext context) {
+    final linkStyle = TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      minimumSize: Size.zero,
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+    return Column(
+      children: [
+        const Text(
+          'By continuing, you agree to our terms and acknowledge our privacy policy.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppColors.muted, fontSize: 12),
+        ),
+        const SizedBox(height: 6),
+        Wrap(
+          alignment: WrapAlignment.center,
+          spacing: 8,
+          children: [
+            TextButton(
+              onPressed: onTerms,
+              style: linkStyle,
+              child: const Text('Terms & Conditions'),
+            ),
+            TextButton(
+              onPressed: onPrivacy,
+              style: linkStyle,
+              child: const Text('Privacy Policy'),
+            ),
+          ],
+        ),
+      ],
+    );
   }
 }
 
@@ -409,7 +482,7 @@ class _SwitchPrompt extends StatelessWidget {
   });
   final String prefix;
   final String action;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) => Wrap(
@@ -430,15 +503,7 @@ class _AuthStory extends StatelessWidget {
     constraints: const BoxConstraints(minHeight: 580),
     padding: const EdgeInsets.all(40),
     decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          AppColors.pakistanGreen,
-          Color(0xFF052D3B),
-          AppColors.deepBlue,
-        ],
-      ),
+      color: AppColors.deepBlue,
       borderRadius: BorderRadius.circular(32),
     ),
     child: const Column(
@@ -447,18 +512,17 @@ class _AuthStory extends StatelessWidget {
         Icon(Icons.school_rounded, color: Colors.white, size: 42),
         SizedBox(height: 150),
         Text(
-          'Opportunity should meet talent wherever it lives.',
+          'One secure portal for students, HEC reviewers, and admins.',
           style: TextStyle(
             color: Colors.white,
             fontSize: 34,
             height: 1.16,
             fontWeight: FontWeight.w800,
-            letterSpacing: -.7,
           ),
         ),
         SizedBox(height: 18),
         Text(
-          'Create your profile once, complete it in clear steps, and always know what remains.',
+          'Sign in securely, complete your application, upload documents, pay the activation fee, and track review decisions.',
           style: TextStyle(
             color: Color(0xFFC1D9D1),
             fontSize: 16,
@@ -468,17 +532,17 @@ class _AuthStory extends StatelessWidget {
         SizedBox(height: 34),
         _TrustLine(
           icon: Icons.verified_user_outlined,
-          text: 'CNIC-based applicant profile',
+          text: 'JWT session with refresh tokens',
         ),
         SizedBox(height: 14),
         _TrustLine(
-          icon: Icons.track_changes_outlined,
-          text: 'Visible application progress',
+          icon: Icons.assignment_turned_in_outlined,
+          text: 'Live application status',
         ),
         SizedBox(height: 14),
         _TrustLine(
-          icon: Icons.devices_outlined,
-          text: 'Works across phone, tablet and web',
+          icon: Icons.admin_panel_settings_outlined,
+          text: 'Role-based portals after login',
         ),
       ],
     ),

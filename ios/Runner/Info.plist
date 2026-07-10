@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>ZABTEC Scholarship</string>
+	<string>HEC scholarships</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Select profile and academic document images for your scholarship application.</string>
 	<key>NSCameraUsageDescription</key>
@@ -19,7 +19,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>zabtec_scholarship</string>
+	<string>HEC scholarships</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

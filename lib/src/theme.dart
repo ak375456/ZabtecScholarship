@@ -11,6 +11,7 @@ abstract final class AppColors {
   static const ink = Color(0xFF172331);
   static const muted = Color(0xFF647181);
   static const border = Color(0xFFDDE4EA);
+  static const danger = Color(0xFFB42318);
 }
 
 ThemeData buildAppTheme() {

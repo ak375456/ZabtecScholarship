@@ -1,26 +1,110 @@
 class Account {
   const Account({
+    required this.id,
     required this.fullName,
     required this.cnic,
     required this.phone,
     required this.email,
-    required this.password,
+    required this.role,
+    this.isActive = true,
+    this.isEmailVerified = false,
+    this.createdAt,
+    this.password,
   });
 
+  final String id;
   final String fullName;
   final String cnic;
   final String phone;
   final String email;
-  final String password;
+  final String role;
+  final bool isActive;
+  final bool isEmailVerified;
+  final DateTime? createdAt;
+
+  @Deprecated('Passwords are never stored in production sessions.')
+  final String? password;
+
+  bool get isStudent => role == 'student';
+  bool get isAdmin => role == 'admin';
+  bool get isHec => role == 'hec';
+  bool get isStaff => isAdmin || isHec;
+
+  String get roleLabel => switch (role) {
+    'admin' => 'Admin',
+    'hec' => 'HEC',
+    _ => 'Student',
+  };
 
   String get initials {
     final words = fullName.trim().split(RegExp(r'\s+'));
-    return words.take(2).map((word) => word[0].toUpperCase()).join();
+    return words
+        .where((word) => word.isNotEmpty)
+        .take(2)
+        .map((word) => word[0].toUpperCase())
+        .join();
   }
+
+  factory Account.fromJson(Map<String, dynamic> json) => Account(
+    id: _string(json['_id'] ?? json['id']),
+    fullName: _string(json['fullName']),
+    cnic: _string(json['cnic']),
+    phone: _string(json['phone']),
+    email: _string(json['email']),
+    role: _string(json['role'], fallback: 'student'),
+    isActive: json['isActive'] != false,
+    isEmailVerified: json['isEmailVerified'] == true,
+    createdAt: _date(json['createdAt']),
+  );
+
+  Map<String, dynamic> toJson() => {
+    '_id': id,
+    'fullName': fullName,
+    'cnic': cnic,
+    'phone': phone,
+    'email': email,
+    'role': role,
+    'isActive': isActive,
+    'isEmailVerified': isEmailVerified,
+    if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
+  };
+}
+
+class AuthSession {
+  const AuthSession({
+    required this.user,
+    required this.accessToken,
+    required this.refreshToken,
+  });
+
+  final Account user;
+  final String accessToken;
+  final String refreshToken;
+
+  factory AuthSession.fromJson(Map<String, dynamic> json) => AuthSession(
+    user: Account.fromJson(_map(json['user'])),
+    accessToken: _string(json['accessToken']),
+    refreshToken: _string(json['refreshToken']),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'user': user.toJson(),
+    'accessToken': accessToken,
+    'refreshToken': refreshToken,
+  };
 }
 
 class ApplicationProgress {
-  ApplicationProgress({bool prefilled = false}) {
+  ApplicationProgress({
+    this.personal = false,
+    this.family = false,
+    this.education = false,
+    this.experience = false,
+    this.research = false,
+    this.documents = false,
+    this.payment = false,
+    bool prefilled = false,
+  }) {
     if (!prefilled) return;
     personal = true;
     family = true;
@@ -28,35 +112,147 @@ class ApplicationProgress {
     experience = true;
     research = true;
     documents = true;
+    payment = true;
   }
 
-  bool personal = false;
-  bool family = false;
-  bool education = false;
-  bool experience = false;
-  bool research = false;
-  bool documents = false;
-  bool servicePaymentComplete = false;
+  bool personal;
+  bool family;
+  bool education;
+  bool experience;
+  bool research;
+  bool documents;
+  bool payment;
 
-  bool get coreProfileComplete => personal && family && education && documents;
-  bool get servicesUnlocked => coreProfileComplete && servicePaymentComplete;
+  bool get servicePaymentComplete => payment;
+  set servicePaymentComplete(bool value) => payment = value;
 
-  List<String> get missingForServices => [
+  bool get coreProfileComplete =>
+      personal && family && education && experience && research && documents;
+  bool get paymentEligible => coreProfileComplete;
+  bool get readyForSubmission => paymentEligible && payment;
+  bool get servicesUnlocked => payment;
+
+  List<String> get missingForPayment => [
     if (!personal) 'Profile',
     if (!family) 'Family',
     if (!education) 'Education',
-    if (!documents) 'Documents',
+    if (!experience) 'Experience declaration',
+    if (!research) 'Research declaration',
+    if (!documents) 'Required documents',
   ];
 
-  double get value =>
-      .15 +
-      (personal ? .15 : 0) +
-      (family ? .15 : 0) +
-      (education ? .20 : 0) +
-      (experience ? .10 : 0) +
-      (research ? .10 : 0) +
-      (documents ? .15 : 0);
-  int get percent => (value * 100).round();
+  List<String> get missingForSubmission => [
+    ...missingForPayment,
+    if (!payment) 'Registration fee challan',
+  ];
+
+  List<String> get missingForServices => missingForSubmission;
+
+  double get value {
+    const sectionWeight = 1 / 7;
+    return (personal ? sectionWeight : 0) +
+        (family ? sectionWeight : 0) +
+        (education ? sectionWeight : 0) +
+        (experience ? sectionWeight : 0) +
+        (research ? sectionWeight : 0) +
+        (documents ? sectionWeight : 0) +
+        (payment ? sectionWeight : 0);
+  }
+
+  int get percent => (value * 100).round().clamp(0, 100);
+
+  factory ApplicationProgress.fromJson(Object? value) {
+    final json = _map(value);
+    return ApplicationProgress(
+      personal: json['personal'] == true,
+      family: json['family'] == true,
+      education: json['education'] == true,
+      experience: json['experience'] == true,
+      research: json['research'] == true,
+      documents: json['documents'] == true,
+      payment: json['payment'] == true,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'personal': personal,
+    'family': family,
+    'education': education,
+    'experience': experience,
+    'research': research,
+    'documents': documents,
+    'payment': payment,
+  };
+}
+
+class ScholarshipApplication {
+  const ScholarshipApplication({
+    required this.id,
+    required this.status,
+    required this.progress,
+    this.applicationNumber,
+    this.student,
+    this.reviewedBy,
+    this.reviewNotes,
+    this.personal = const {},
+    this.family = const {},
+    this.education = const [],
+    this.experience = const {},
+    this.research = const {},
+    this.submittedAt,
+    this.createdAt,
+  });
+
+  final String id;
+  final String? applicationNumber;
+  final String status;
+  final Account? student;
+  final Account? reviewedBy;
+  final String? reviewNotes;
+  final Map<String, dynamic> personal;
+  final Map<String, dynamic> family;
+  final List<Map<String, dynamic>> education;
+  final Map<String, dynamic> experience;
+  final Map<String, dynamic> research;
+  final ApplicationProgress progress;
+  final DateTime? submittedAt;
+  final DateTime? createdAt;
+
+  bool get isDraft => status == 'draft';
+
+  String get statusLabel => switch (status) {
+    'under_review' => 'Under review',
+    'waitlisted' => 'Waitlisted',
+    'approved' => 'Approved',
+    'rejected' => 'Rejected',
+    'submitted' => 'Submitted',
+    _ => 'Draft',
+  };
+
+  factory ScholarshipApplication.fromJson(Map<String, dynamic> json) {
+    final studentValue = json['student'];
+    final reviewedByValue = json['reviewedBy'];
+    return ScholarshipApplication(
+      id: _string(json['_id'] ?? json['id']),
+      applicationNumber: _nullableString(json['applicationNumber']),
+      status: _string(json['status'], fallback: 'draft'),
+      student: studentValue is Map
+          ? Account.fromJson(_map(studentValue))
+          : null,
+      reviewedBy: reviewedByValue is Map
+          ? Account.fromJson(_map(reviewedByValue))
+          : null,
+      reviewNotes: _nullableString(json['reviewNotes']),
+      personal: _map(json['personal']),
+      family: _map(json['family']),
+      education: _list(json['education']).map(_map).toList(),
+      experience: _map(json['experience']),
+      research: _map(json['research']),
+      progress: ApplicationProgress.fromJson(json['progress']),
+      submittedAt: _date(json['submittedAt']),
+      createdAt: _date(json['createdAt']),
+    );
+  }
 }
 
 class EducationDocumentRequirement {
@@ -70,7 +266,47 @@ class EducationDocumentRequirement {
   final String level;
   final String status;
 
-  bool get isCompleted => status == 'Completed';
+  bool get isCompleted => status == 'Completed' || status == 'completed';
+}
+
+class StudentDocument {
+  const StudentDocument({
+    required this.id,
+    required this.documentType,
+    required this.filename,
+    required this.originalName,
+    required this.mimeType,
+    required this.sizeBytes,
+    required this.url,
+    required this.isVerified,
+    this.rejectionReason,
+    this.createdAt,
+  });
+
+  final String id;
+  final String documentType;
+  final String filename;
+  final String originalName;
+  final String mimeType;
+  final int sizeBytes;
+  final String url;
+  final bool isVerified;
+  final String? rejectionReason;
+  final DateTime? createdAt;
+
+  factory StudentDocument.fromJson(Map<String, dynamic> json) =>
+      StudentDocument(
+        id: _string(json['_id'] ?? json['id']),
+        documentType: _string(json['documentType']),
+        filename: _string(json['filename']),
+        originalName: _string(json['originalName']),
+        mimeType: _string(json['mimeType']),
+        sizeBytes: _int(json['sizeBytes']),
+        url: _string(json['url']),
+        isVerified: json['isVerified'] == true,
+        rejectionReason: _nullableString(json['rejectionReason']),
+        createdAt: _date(json['createdAt']),
+      );
 }
 
 class ActivationReceipt {
@@ -81,16 +317,51 @@ class ActivationReceipt {
     required this.amountPkr,
     required this.paymentMethod,
     required this.cardLast4,
+    this.currency = 'PKR',
+    this.status = 'completed',
+    this.applicationNumber,
   });
 
   final String receiptNumber;
   final Account account;
   final DateTime issuedAt;
   final int amountPkr;
+  final String currency;
   final String paymentMethod;
   final String cardLast4;
+  final String status;
+  final String? applicationNumber;
 
-  String get amountLabel => 'PKR ${_formatAmount(amountPkr)}';
+  String get amountLabel => '$currency ${_formatAmount(amountPkr)}';
+  String get challanNumber {
+    final digits = receiptNumber.replaceAll(RegExp(r'\D'), '');
+    if (digits.length == 15) return digits;
+    if (digits.length > 15) return digits.substring(digits.length - 15);
+
+    var hash = 0;
+    for (final unit in receiptNumber.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final prefix = issuedAt.millisecondsSinceEpoch.toString();
+    final suffix = hash.toString().padLeft(10, '0');
+    return '$prefix$suffix'.substring(0, 15);
+  }
+
+  factory ActivationReceipt.fromJson(
+    Map<String, dynamic> json, {
+    required Account account,
+  }) => ActivationReceipt(
+    receiptNumber: _string(json['receiptNumber']),
+    account: account,
+    issuedAt:
+        _date(json['paidAt']) ?? _date(json['createdAt']) ?? DateTime.now(),
+    amountPkr: _int(json['amount'], fallback: 1500),
+    currency: _string(json['currency'], fallback: 'PKR'),
+    paymentMethod: _string(json['method'], fallback: 'bank_transfer'),
+    cardLast4: _string(json['cardLast4']),
+    status: _string(json['status'], fallback: 'completed'),
+    applicationNumber: _nullableString(json['applicationNumber']),
+  );
 
   static String _formatAmount(int value) {
     final text = value.toString();
@@ -102,4 +373,35 @@ class ActivationReceipt {
     }
     return buffer.toString();
   }
+}
+
+Map<String, dynamic> _map(Object? value) {
+  if (value is Map<String, dynamic>) return value;
+  if (value is Map) {
+    return value.map((key, value) => MapEntry(key.toString(), value));
+  }
+  return <String, dynamic>{};
+}
+
+List<dynamic> _list(Object? value) => value is List ? value : const [];
+
+String _string(Object? value, {String fallback = ''}) {
+  final text = value?.toString();
+  return text == null || text.isEmpty ? fallback : text;
+}
+
+String? _nullableString(Object? value) {
+  final text = value?.toString().trim();
+  return text == null || text.isEmpty ? null : text;
+}
+
+int _int(Object? value, {int fallback = 0}) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
+DateTime? _date(Object? value) {
+  if (value is DateTime) return value;
+  return DateTime.tryParse(value?.toString() ?? '');
 }

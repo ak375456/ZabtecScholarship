@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../data/demo_profile.dart';
 import '../models.dart';
+import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'sections/documents_section.dart';
@@ -15,12 +15,14 @@ import 'sections/services_section.dart';
 class PortalScreen extends StatefulWidget {
   const PortalScreen({
     super.key,
-    required this.account,
+    required this.api,
+    required this.session,
     required this.onLogout,
   });
 
-  final Account account;
-  final VoidCallback onLogout;
+  final ApiClient api;
+  final AuthSession session;
+  final Future<void> Function() onLogout;
 
   @override
   State<PortalScreen> createState() => _PortalScreenState();
@@ -28,9 +30,13 @@ class PortalScreen extends StatefulWidget {
 
 class _PortalScreenState extends State<PortalScreen> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
-  final progress = ApplicationProgress(prefilled: DemoProfile.enabled);
+  ScholarshipApplication? _application;
+  List<StudentDocument> _documents = [];
   List<EducationDocumentRequirement> _educationRequirements = [];
   ActivationReceipt? _activationReceipt;
+  bool _loading = true;
+  bool _submitting = false;
+  bool _deletingAccount = false;
   int _index = 0;
 
   static const _items = [
@@ -41,21 +47,18 @@ class _PortalScreenState extends State<PortalScreen> {
     (Icons.work_outline_rounded, 'Experience'),
     (Icons.science_outlined, 'Research'),
     (Icons.folder_copy_outlined, 'Documents'),
-    (Icons.design_services_outlined, 'Services'),
+    (Icons.receipt_long_outlined, 'Challan'),
   ];
+
+  ApplicationProgress get _progress =>
+      _effectiveProgress(_application?.progress ?? ApplicationProgress());
+
+  Account get _account => widget.session.user;
 
   @override
   void initState() {
     super.initState();
-    if (!DemoProfile.enabled) return;
-    _educationRequirements = [
-      for (var index = 0; index < DemoProfile.education.length; index++)
-        EducationDocumentRequirement(
-          id: index,
-          level: DemoProfile.education[index].level,
-          status: DemoProfile.education[index].status,
-        ),
-    ];
+    _load();
   }
 
   @override
@@ -63,44 +66,70 @@ class _PortalScreenState extends State<PortalScreen> {
     final wide = MediaQuery.sizeOf(context).width >= 920;
     final pages = [
       DashboardSection(
-        account: widget.account,
-        progress: progress,
+        account: _account,
+        application: _application,
+        documents: _documents,
+        receipt: _activationReceipt,
+        loading: _loading,
+        submitting: _submitting,
+        onRefresh: _load,
         onContinue: () => _selectPage(1),
-        onOpenServices: () => _selectPage(7),
+        onOpenPayment: () => _selectPage(7),
+        onSubmit: _submitApplication,
       ),
       PersonalSection(
-        account: widget.account,
-        onSaved: () => _saved('Profile', () => progress.personal = true),
+        account: _account,
+        application: _application,
+        onSaved: (payload) =>
+            _saveSection('Profile', () => widget.api.updatePersonal(payload)),
       ),
       FamilySection(
-        onSaved: () => _saved('Family details', () => progress.family = true),
+        application: _application,
+        onSaved: (payload) => _saveSection(
+          'Family details',
+          () => widget.api.updateFamily(payload),
+        ),
       ),
       EducationSection(
+        application: _application,
         onRequirementsChanged: (requirements) =>
             setState(() => _educationRequirements = requirements),
-        onSaved: () =>
-            _saved('Education history', () => progress.education = true),
+        onSaved: (entries) => _saveSection(
+          'Education history',
+          () => widget.api.updateEducation(entries),
+        ),
       ),
       ExperienceSection(
-        onSaved: () => _saved('Experience', () => progress.experience = true),
+        application: _application,
+        onSaved: (payload) => _saveSection(
+          'Experience',
+          () => widget.api.updateExperience(payload),
+        ),
       ),
       ResearchSection(
-        onSaved: () =>
-            _saved('Research declaration', () => progress.research = true),
+        application: _application,
+        onSaved: (payload) => _saveSection(
+          'Research declaration',
+          () => widget.api.updateResearch(payload),
+        ),
       ),
       DocumentsSection(
         educationRequirements: _educationRequirements,
-        onSaved: () => _saved('Documents', () => progress.documents = true),
+        documents: _documents,
+        onUpload: _uploadDocument,
+        onDelete: _deleteDocument,
+        onSaved: () => _saveSection('Documents', () async => {}),
       ),
       ServicesSection(
-        account: widget.account,
-        progress: progress,
+        account: _account,
+        application: _application,
+        progress: _progress,
         receipt: _activationReceipt,
-        onOpenSection: _selectPage,
         onPaymentCompleted: (receipt) => setState(() {
           _activationReceipt = receipt;
-          progress.servicePaymentComplete = true;
+          _application?.progress.payment = true;
         }),
+        onPayActivation: _payActivation,
       ),
     ];
 
@@ -112,11 +141,13 @@ class _PortalScreenState extends State<PortalScreen> {
               width: MediaQuery.sizeOf(context).width.clamp(280, 330),
               child: SafeArea(
                 child: _PortalMenu(
-                  account: widget.account,
+                  account: _account,
                   selectedIndex: _index,
-                  progress: progress,
+                  progress: _progress,
                   onSelected: _selectPage,
                   onLogout: widget.onLogout,
+                  onDeleteAccount: _confirmDeleteAccount,
+                  deletingAccount: _deletingAccount,
                 ),
               ),
             ),
@@ -141,20 +172,11 @@ class _PortalScreenState extends State<PortalScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
         actions: [
-          if (wide)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Center(
-                child: Text(
-                  '${progress.percent}% complete',
-                  style: const TextStyle(
-                    color: AppColors.muted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
+          IconButton(
+            onPressed: _loading ? null : _load,
+            icon: const Icon(Icons.sync_rounded),
+            tooltip: 'Refresh application',
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 14),
             child: Semantics(
@@ -167,7 +189,7 @@ class _PortalScreenState extends State<PortalScreen> {
                   radius: 21,
                   backgroundColor: AppColors.deepBlue,
                   child: Text(
-                    widget.account.initials,
+                    _account.initials,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w800,
@@ -189,11 +211,13 @@ class _PortalScreenState extends State<PortalScreen> {
             SizedBox(
               width: 248,
               child: _PortalMenu(
-                account: widget.account,
+                account: _account,
                 selectedIndex: _index,
-                progress: progress,
+                progress: _progress,
                 onSelected: _selectPage,
                 onLogout: widget.onLogout,
+                onDeleteAccount: _confirmDeleteAccount,
+                deletingAccount: _deletingAccount,
               ),
             ),
           Expanded(
@@ -204,6 +228,118 @@ class _PortalScreenState extends State<PortalScreen> {
     );
   }
 
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    try {
+      final results = await Future.wait<dynamic>([
+        widget.api.getStudentApplication(),
+        widget.api.getDocuments(),
+        widget.api.getReceipt(),
+      ]);
+      final app = results[0] as ScholarshipApplication;
+      if (!mounted) return;
+      setState(() {
+        _application = app;
+        _documents = results[1] as List<StudentDocument>;
+        _activationReceipt = results[2] as ActivationReceipt?;
+        _educationRequirements = _requirementsFrom(app);
+      });
+    } catch (error) {
+      _message('Could not load portal data: $error');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _saveSection(
+    String section,
+    Future<dynamic> Function() action,
+  ) async {
+    try {
+      await action();
+      await _load();
+      _message('$section saved.');
+    } catch (error) {
+      _message('Could not save $section: $error');
+      rethrow;
+    }
+  }
+
+  Future<void> _uploadDocument(
+    String documentType,
+    UploadFilePayload file,
+  ) async {
+    await widget.api.uploadDocument(documentType: documentType, file: file);
+    await _load();
+  }
+
+  Future<void> _deleteDocument(StudentDocument document) async {
+    await widget.api.deleteDocument(document.id);
+    await _load();
+  }
+
+  Future<ActivationReceipt> _payActivation({
+    String method = 'bank_transfer',
+  }) async {
+    if (!_progress.paymentEligible) {
+      throw 'Complete all required profile sections and documents before generating the challan.';
+    }
+    final receipt = await widget.api.processPayment(method: method);
+    await _load();
+    return receipt;
+  }
+
+  Future<void> _submitApplication() async {
+    if (!_progress.readyForSubmission || _submitting) return;
+    setState(() => _submitting = true);
+    try {
+      await widget.api.submitApplication();
+      await _load();
+      _message('Application submitted successfully.');
+    } catch (error) {
+      _message('Could not submit application: $error');
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    if (_deletingAccount) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.warning_amber_rounded, color: AppColors.danger),
+        title: const Text('Delete account permanently?'),
+        content: const Text(
+          'This will permanently delete your student account and associated '
+          'scholarship application data. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.danger),
+            child: const Text('Delete account'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+    setState(() => _deletingAccount = true);
+    try {
+      await widget.api.deleteStudentAccount();
+    } catch (error) {
+      _message('Could not delete account: $error');
+    } finally {
+      if (mounted) setState(() => _deletingAccount = false);
+    }
+  }
+
   void _selectPage(int index) {
     if (_scaffoldKey.currentState?.isDrawerOpen ?? false) {
       Navigator.of(context).pop();
@@ -211,12 +347,77 @@ class _PortalScreenState extends State<PortalScreen> {
     setState(() => _index = index);
   }
 
-  void _saved(String section, VoidCallback update) {
-    setState(update);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$section saved. Progress updated.')),
+  void _message(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  List<EducationDocumentRequirement> _requirementsFrom(
+    ScholarshipApplication app,
+  ) => [
+    for (var index = 0; index < app.education.length; index++)
+      if ((app.education[index]['level']?.toString() ?? '').isNotEmpty)
+        EducationDocumentRequirement(
+          id: index,
+          level: app.education[index]['level'].toString(),
+          status: 'Completed',
+        ),
+  ];
+
+  ApplicationProgress _effectiveProgress(ApplicationProgress source) {
+    final paid = source.payment || _activationReceipt != null;
+    return ApplicationProgress(
+      personal: source.personal,
+      family: source.family,
+      education: source.education,
+      experience: source.experience,
+      research: source.research,
+      documents: _requiredDocumentsComplete(),
+      payment: paid,
     );
   }
+
+  bool _requiredDocumentsComplete() {
+    final uploaded = _documents
+        .map((document) => document.documentType)
+        .toSet();
+    return _requiredDocumentTypes().every(uploaded.contains);
+  }
+
+  Set<String> _requiredDocumentTypes() => {
+    'photograph',
+    'cnic_front',
+    'cnic_back',
+    ..._educationDocumentTypes(_educationRequirements),
+  };
+}
+
+Set<String> _educationDocumentTypes(
+  List<EducationDocumentRequirement> requirements,
+) {
+  final types = <String>{};
+  for (final requirement in requirements) {
+    final level = requirement.level.toLowerCase();
+    if (level.contains('matric') || level.contains('ssc')) {
+      types.add('matric_certificate');
+    } else if (level.contains('fsc') ||
+        level.contains('hssc') ||
+        level.contains('a-level') ||
+        level.contains('o-level')) {
+      types.add('fsc_certificate');
+    } else if (level.contains('master') || level.contains('mphil')) {
+      types.add('masters_certificate');
+    } else if (level.contains('bs') ||
+        level.contains('bachelor') ||
+        level.contains('associate')) {
+      types.add('bachelors_certificate');
+    } else {
+      types.add('other');
+    }
+  }
+  return types;
 }
 
 class _PortalMenu extends StatelessWidget {
@@ -226,13 +427,17 @@ class _PortalMenu extends StatelessWidget {
     required this.progress,
     required this.onSelected,
     required this.onLogout,
+    required this.onDeleteAccount,
+    required this.deletingAccount,
   });
 
   final Account account;
   final int selectedIndex;
   final ApplicationProgress progress;
   final ValueChanged<int> onSelected;
-  final VoidCallback onLogout;
+  final Future<void> Function() onLogout;
+  final Future<void> Function() onDeleteAccount;
+  final bool deletingAccount;
 
   static const _items = _PortalScreenState._items;
 
@@ -273,9 +478,7 @@ class _PortalMenu extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      progress.servicesUnlocked
-                          ? 'Profile active'
-                          : '${progress.percent}% profile complete',
+                      '${progress.percent}% complete',
                       style: const TextStyle(
                         color: AppColors.muted,
                         fontSize: 11,
@@ -336,6 +539,29 @@ class _PortalMenu extends StatelessWidget {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
+        ListTile(
+          onTap: deletingAccount ? null : onDeleteAccount,
+          leading: deletingAccount
+              ? const SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.danger,
+                  ),
+                )
+              : const Icon(Icons.delete_forever_outlined),
+          iconColor: AppColors.danger,
+          title: Text(
+            deletingAccount ? 'Deleting account...' : 'Delete account',
+            style: const TextStyle(
+              color: AppColors.danger,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       ],
     ),
   );
@@ -347,20 +573,11 @@ class _PortalMenu extends StatelessWidget {
     4 => progress.experience,
     5 => progress.research,
     6 => progress.documents,
-    7 => progress.servicesUnlocked,
+    7 => progress.payment,
     _ => false,
   };
 
   Widget? _trailingFor(int index) {
-    if (index == 7 && !progress.servicesUnlocked) {
-      return Icon(
-        progress.coreProfileComplete
-            ? Icons.credit_card_rounded
-            : Icons.lock_outline_rounded,
-        size: 17,
-        color: AppColors.muted,
-      );
-    }
     if (index > 0 && _completeFor(index)) {
       return const Icon(
         Icons.check_circle,
@@ -376,215 +593,287 @@ class DashboardSection extends StatelessWidget {
   const DashboardSection({
     super.key,
     required this.account,
-    required this.progress,
+    required this.application,
+    required this.documents,
+    required this.receipt,
+    required this.loading,
+    required this.submitting,
+    required this.onRefresh,
     required this.onContinue,
-    required this.onOpenServices,
+    required this.onOpenPayment,
+    required this.onSubmit,
   });
 
   final Account account;
-  final ApplicationProgress progress;
+  final ScholarshipApplication? application;
+  final List<StudentDocument> documents;
+  final ActivationReceipt? receipt;
+  final bool loading;
+  final bool submitting;
+  final Future<void> Function() onRefresh;
   final VoidCallback onContinue;
-  final VoidCallback onOpenServices;
-
-  @override
-  Widget build(BuildContext context) => SingleChildScrollView(
-    padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 520 ? 18 : 32),
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 1050),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Welcome, ${account.fullName.split(' ').first}',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-            const SizedBox(height: 7),
-            const Text(
-              'Your scholarship workspace is ready.',
-              style: TextStyle(color: AppColors.muted),
-            ),
-            const SizedBox(height: 26),
-            _ProgressHero(progress: progress),
-            const SizedBox(height: 18),
-            _ActivationStatusCard(
-              progress: progress,
-              onContinue: onContinue,
-              onOpenServices: onOpenServices,
-            ),
-            const SizedBox(height: 26),
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(
-                MediaQuery.sizeOf(context).width < 480 ? 24 : 34,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: AppColors.border),
-              ),
-              child: Column(
-                children: [
-                  Container(
-                    width: 74,
-                    height: 74,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEAF3FB),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.inbox_outlined,
-                      size: 34,
-                      color: AppColors.zaptecBlue,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'No submitted application yet',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 7),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 520),
-                    child: const Text(
-                      'Complete your profile from the menu. Your application status and future announcements will appear here.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.muted, height: 1.5),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: 210,
-                    child: PrimaryButton(
-                      label: 'Continue setup',
-                      icon: Icons.arrow_forward_rounded,
-                      onPressed: onContinue,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
-
-class _ActivationStatusCard extends StatelessWidget {
-  const _ActivationStatusCard({
-    required this.progress,
-    required this.onContinue,
-    required this.onOpenServices,
-  });
-
-  final ApplicationProgress progress;
-  final VoidCallback onContinue;
-  final VoidCallback onOpenServices;
+  final VoidCallback onOpenPayment;
+  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
-    final unlocked = progress.servicesUnlocked;
-    final readyForPayment = progress.coreProfileComplete && !unlocked;
-    final title = unlocked
-        ? 'Profile active'
-        : readyForPayment
-        ? 'Activation payment required'
-        : 'Services unlock after setup';
-    final description = unlocked
-        ? 'Your profile is active and Services are now available.'
-        : readyForPayment
-        ? 'Your required profile sections are complete. Pay PKR 1,500 to activate your profile and services.'
-        : 'Complete Profile, Family, Education and Documents first. After that, pay PKR 1,500 to activate your profile and services.';
-    final icon = unlocked
-        ? Icons.verified_user_outlined
-        : readyForPayment
-        ? Icons.credit_card_rounded
-        : Icons.lock_outline_rounded;
-    final color = unlocked ? AppColors.pakistanGreen : AppColors.zaptecBlue;
-    final label = unlocked
-        ? 'Open services'
-        : readyForPayment
-        ? 'Pay activation fee'
-        : 'Continue setup';
-    final action = readyForPayment || unlocked ? onOpenServices : onContinue;
-
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 480 ? 18 : 22),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0800183B),
-            blurRadius: 18,
-            offset: Offset(0, 8),
+    final progress = application?.progress ?? ApplicationProgress();
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.all(
+          MediaQuery.sizeOf(context).width < 520 ? 18 : 32,
+        ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1050),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome, ${account.fullName.split(' ').first}',
+                  style: Theme.of(context).textTheme.headlineMedium,
+                ),
+                const SizedBox(height: 7),
+                Text(
+                  loading
+                      ? 'Loading your application...'
+                      : 'Your application is ready to continue.',
+                  style: const TextStyle(color: AppColors.muted),
+                ),
+                const SizedBox(height: 26),
+                _ProgressHero(progress: progress),
+                const SizedBox(height: 18),
+                _StatusCard(
+                  application: application,
+                  receipt: receipt,
+                  progress: progress,
+                  submitting: submitting,
+                  onContinue: onContinue,
+                  onOpenPayment: onOpenPayment,
+                  onSubmit: onSubmit,
+                ),
+                const SizedBox(height: 26),
+                _ApplicationSummary(
+                  application: application,
+                  documents: documents,
+                  receipt: receipt,
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  const _StatusCard({
+    required this.application,
+    required this.receipt,
+    required this.progress,
+    required this.submitting,
+    required this.onContinue,
+    required this.onOpenPayment,
+    required this.onSubmit,
+  });
+
+  final ScholarshipApplication? application;
+  final ActivationReceipt? receipt;
+  final ApplicationProgress progress;
+  final bool submitting;
+  final VoidCallback onContinue;
+  final VoidCallback onOpenPayment;
+  final VoidCallback onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    final canSubmit =
+        application?.isDraft == true && progress.readyForSubmission;
+    return FormCard(
+      title: 'Application status',
+      icon: Icons.assignment_turned_in_outlined,
       child: LayoutBuilder(
         builder: (context, constraints) {
           final compact = constraints.maxWidth < 620;
-          final content = Row(
+          final content = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 46,
-                height: 46,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: .1),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(icon, color: color),
+              Text(
+                application?.statusLabel ?? 'Loading',
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 5),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: AppColors.muted,
-                        height: 1.45,
-                      ),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 6),
+              Text(
+                application?.applicationNumber == null
+                    ? 'Application number will appear when your record is created.'
+                    : 'Application ${application!.applicationNumber}',
+                style: const TextStyle(color: AppColors.muted),
               ),
+              if (!progress.readyForSubmission) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Complete before submission: ${progress.missingForSubmission.join(', ')}',
+                  style: const TextStyle(color: AppColors.muted),
+                ),
+              ],
+              if (receipt != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Challan ${receipt!.challanNumber}',
+                  style: const TextStyle(
+                    color: AppColors.pakistanGreen,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
             ],
           );
-          final button = SizedBox(
-            width: compact ? double.infinity : 210,
-            child: OutlinedButton.icon(
-              onPressed: action,
-              icon: Icon(unlocked ? Icons.apps_rounded : icon),
-              label: Text(label),
-            ),
+          final buttons = Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              OutlinedButton.icon(
+                onPressed: progress.payment
+                    ? onContinue
+                    : progress.paymentEligible
+                    ? onOpenPayment
+                    : onContinue,
+                icon: Icon(
+                  progress.payment
+                      ? Icons.edit_note_rounded
+                      : progress.paymentEligible
+                      ? Icons.payments_outlined
+                      : Icons.payments_outlined,
+                ),
+                label: Text(
+                  progress.payment
+                      ? 'Continue form'
+                      : progress.paymentEligible
+                      ? 'Open challan'
+                      : 'Complete profile',
+                ),
+              ),
+              ElevatedButton.icon(
+                onPressed: canSubmit && !submitting ? onSubmit : null,
+                icon: submitting
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.send_rounded),
+                label: Text(submitting ? 'Submitting...' : 'Submit'),
+              ),
+            ],
           );
 
           if (compact) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [content, const SizedBox(height: 16), button],
+              children: [content, const SizedBox(height: 18), buttons],
             );
           }
           return Row(
             children: [
               Expanded(child: content),
               const SizedBox(width: 20),
-              button,
+              buttons,
             ],
           );
         },
       ),
     );
   }
+}
+
+class _ApplicationSummary extends StatelessWidget {
+  const _ApplicationSummary({
+    required this.application,
+    required this.documents,
+    required this.receipt,
+  });
+
+  final ScholarshipApplication? application;
+  final List<StudentDocument> documents;
+  final ActivationReceipt? receipt;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final width = constraints.maxWidth >= 760
+          ? (constraints.maxWidth - 28) / 3
+          : constraints.maxWidth;
+      final cards = [
+        _MetricCard(
+          icon: Icons.confirmation_number_outlined,
+          label: 'Application',
+          value: application?.applicationNumber ?? 'Draft',
+        ),
+        _MetricCard(
+          icon: Icons.folder_copy_outlined,
+          label: 'Documents',
+          value: '${documents.length} uploaded',
+        ),
+        _MetricCard(
+          icon: Icons.receipt_long_outlined,
+          label: 'Challan',
+          value: receipt == null ? 'Pending' : 'Generated',
+        ),
+      ];
+      return Wrap(
+        spacing: 14,
+        runSpacing: 14,
+        children: cards
+            .map((card) => SizedBox(width: width, child: card))
+            .toList(),
+      );
+    },
+  );
+}
+
+class _MetricCard extends StatelessWidget {
+  const _MetricCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: AppColors.border),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: AppColors.zaptecBlue),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: const TextStyle(color: AppColors.muted)),
+              const SizedBox(height: 3),
+              Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _ProgressHero extends StatelessWidget {
@@ -596,9 +885,7 @@ class _ProgressHero extends StatelessWidget {
     width: double.infinity,
     padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 480 ? 22 : 30),
     decoration: BoxDecoration(
-      gradient: const LinearGradient(
-        colors: [AppColors.deepBlue, AppColors.zaptecBlue],
-      ),
+      color: AppColors.deepBlue,
       borderRadius: BorderRadius.circular(24),
       boxShadow: const [
         BoxShadow(
@@ -615,7 +902,7 @@ class _ProgressHero extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'APPLICATION READINESS',
+              'APPLICATION PROGRESS',
               style: TextStyle(
                 color: Color(0xFFA6D8FF),
                 fontSize: 11,
@@ -626,8 +913,8 @@ class _ProgressHero extends StatelessWidget {
             const SizedBox(height: 9),
             Text(
               progress.percent == 100
-                  ? 'Everything is ready'
-                  : 'Build your application at your own pace',
+                  ? 'Everything is complete'
+                  : 'Complete your application sections',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 23,
@@ -637,7 +924,7 @@ class _ProgressHero extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              'Use the menu to move between sections. Your saved progress stays visible here.',
+              'Your progress updates automatically as each required section is saved.',
               style: TextStyle(
                 color: Colors.white.withValues(alpha: .72),
                 height: 1.45,

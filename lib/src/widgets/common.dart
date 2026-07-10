@@ -243,3 +243,20 @@ Future<DateTime?> pickAppDate(BuildContext context, {DateTime? initial}) =>
 
 String formatDate(DateTime value) =>
     '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
+
+DateTime? parseAppDate(String value) {
+  final parts = value.split('/');
+  if (parts.length != 3) return DateTime.tryParse(value);
+  final day = int.tryParse(parts[0]);
+  final month = int.tryParse(parts[1]);
+  final year = int.tryParse(parts[2]);
+  if (day == null || month == null || year == null) return null;
+  return DateTime(year, month, day);
+}
+
+String formatBackendDate(Object? value) {
+  final date = value is DateTime
+      ? value
+      : DateTime.tryParse(value?.toString() ?? '');
+  return date == null ? '' : formatDate(date.toLocal());
+}
