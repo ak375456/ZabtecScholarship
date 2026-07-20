@@ -21,11 +21,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sign in'), findsWidgets);
-    expect(find.text('Student'), findsOneWidget);
-    expect(find.text('HEC / Admin'), findsOneWidget);
+    expect(find.text('CNIC or email address'), findsOneWidget);
+    expect(find.text('Student'), findsNothing);
+    expect(find.text('HEC / Admin'), findsNothing);
   });
 
-  testWidgets('staff login switches from CNIC to email', (tester) async {
+  testWidgets('login uses one identifier field for every role', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AuthScreen(
@@ -36,13 +37,41 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('CNIC'), findsOneWidget);
-    await tester.tap(find.text('HEC / Admin'));
+    expect(find.text('CNIC or email address'), findsOneWidget);
+    expect(
+      find.text(
+        'Students enter a CNIC. HEC and admin users enter an email address.',
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('authentication supports five languages', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthScreen(
+          api: ApiClient(baseUrl: 'http://localhost:5000/api/v1'),
+          onAuthenticated: (_) {},
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
-    expect(find.text('Email address'), findsOneWidget);
+
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    for (final language in ['اردو', 'Italiano', 'Azərbaycanca', 'Français']) {
+      expect(find.text(language), findsOneWidget);
+    }
+
+    await tester.tap(find.text('Français').last);
+    await tester.pumpAndSettle();
+    expect(find.text('Se connecter'), findsWidgets);
+    expect(find.text('CNIC ou adresse e-mail'), findsOneWidget);
   });
 
   testWidgets('student signup requests password confirmation', (tester) async {
+    SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(
       MaterialApp(
         home: AuthScreen(

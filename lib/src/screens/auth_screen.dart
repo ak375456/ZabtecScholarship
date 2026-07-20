@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../localization/auth_strings.dart';
 import '../models.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
@@ -36,11 +38,19 @@ class _AuthScreenState extends State<AuthScreen> {
   final _loginIdentifier = TextEditingController();
   final _loginPassword = TextEditingController();
   bool _signup = false;
-  bool _staffLogin = false;
+  AppLanguage _language = AppLanguage.english;
   bool _showSignupPassword = false;
   bool _showConfirmPassword = false;
   bool _showLoginPassword = false;
   bool _busy = false;
+
+  AuthStrings get _strings => AuthStrings(_language);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadLanguage();
+  }
 
   @override
   void dispose() {
@@ -61,60 +71,71 @@ class _AuthScreenState extends State<AuthScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(
-          builder: (context, constraints) => SingleChildScrollView(
-            padding: EdgeInsets.symmetric(
-              horizontal: constraints.maxWidth < 560 ? 20 : 40,
-              vertical: 24,
-            ),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: constraints.maxHeight - 48,
+    return Directionality(
+      textDirection: _language.isRtl ? TextDirection.rtl : TextDirection.ltr,
+      child: Scaffold(
+        body: SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) => SingleChildScrollView(
+              padding: EdgeInsets.symmetric(
+                horizontal: constraints.maxWidth < 560 ? 20 : 40,
+                vertical: 24,
               ),
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1040),
-                  child: Row(
-                    children: [
-                      if (constraints.maxWidth >= 850) ...[
-                        const Expanded(child: _AuthStory()),
-                        const SizedBox(width: 56),
-                      ],
-                      Expanded(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 500),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Align(
-                                alignment: Alignment.centerRight,
-                                child: BrandMark(compact: true),
-                              ),
-                              const SizedBox(height: 34),
-                              AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 260),
-                                switchInCurve: Curves.easeOutCubic,
-                                child: _signup ? _signupForm() : _loginForm(),
-                              ),
-                              const SizedBox(height: 20),
-                              _LegalLinks(
-                                onTerms: () => _openLegalPage(
-                                  _termsUrl,
-                                  'Terms & Conditions',
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: constraints.maxHeight - 48,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1040),
+                    child: Row(
+                      children: [
+                        if (constraints.maxWidth >= 850) ...[
+                          Expanded(child: _AuthStory(strings: _strings)),
+                          const SizedBox(width: 56),
+                        ],
+                        Expanded(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 500),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Flexible(child: _languagePicker()),
+                                    const SizedBox(width: 16),
+                                    const BrandMark(compact: true),
+                                  ],
                                 ),
-                                onPrivacy: () => _openLegalPage(
-                                  _privacyUrl,
-                                  'Privacy Policy',
+                                const SizedBox(height: 34),
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 260),
+                                  switchInCurve: Curves.easeOutCubic,
+                                  child: _signup ? _signupForm() : _loginForm(),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(height: 20),
+                                _LegalLinks(
+                                  notice: _strings.get('legalNotice'),
+                                  termsLabel: _strings.get('terms'),
+                                  privacyLabel: _strings.get('privacy'),
+                                  onTerms: () => _openLegalPage(
+                                    _termsUrl,
+                                    _strings.get('terms'),
+                                  ),
+                                  onPrivacy: () => _openLegalPage(
+                                    _privacyUrl,
+                                    _strings.get('privacy'),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -125,6 +146,31 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
+  Widget _languagePicker() => SizedBox(
+    width: 170,
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<AppLanguage>(
+        value: _language,
+        isExpanded: true,
+        borderRadius: BorderRadius.circular(16),
+        icon: const Icon(Icons.language_rounded),
+        items: AppLanguage.values
+            .map(
+              (language) => DropdownMenuItem(
+                value: language,
+                child: Text(language.label, overflow: TextOverflow.ellipsis),
+              ),
+            )
+            .toList(),
+        onChanged: _busy
+            ? null
+            : (language) {
+                if (language != null) _setLanguage(language);
+              },
+      ),
+    ),
+  );
+
   Widget _loginForm() => Form(
     key: const ValueKey('login-form'),
     child: Form(
@@ -132,56 +178,26 @@ class _AuthScreenState extends State<AuthScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Sign in', style: Theme.of(context).textTheme.displaySmall),
+          Text(
+            _strings.get('signIn'),
+            style: Theme.of(context).textTheme.displaySmall,
+          ),
           const SizedBox(height: 10),
-          const Text(
-            'Students use CNIC. HEC and admin users use email.',
-            style: TextStyle(color: AppColors.muted),
+          Text(
+            _strings.get('loginHelp'),
+            style: const TextStyle(color: AppColors.muted),
           ),
           const SizedBox(height: 24),
-          SegmentedButton<bool>(
-            segments: const [
-              ButtonSegment(
-                value: false,
-                icon: Icon(Icons.badge_outlined),
-                label: Text('Student'),
-              ),
-              ButtonSegment(
-                value: true,
-                icon: Icon(Icons.admin_panel_settings_outlined),
-                label: Text('HEC / Admin'),
-              ),
-            ],
-            selected: {_staffLogin},
-            onSelectionChanged: _busy
-                ? null
-                : (value) => setState(() {
-                    _staffLogin = value.first;
-                    _loginIdentifier.clear();
-                  }),
-          ),
-          const SizedBox(height: 18),
           TextFormField(
             controller: _loginIdentifier,
-            keyboardType: _staffLogin
-                ? TextInputType.emailAddress
-                : TextInputType.number,
-            autofillHints: _staffLogin
-                ? const [AutofillHints.email]
-                : const [AutofillHints.username],
-            inputFormatters: _staffLogin
-                ? null
-                : [DigitsOnlyFormatter(), LengthLimitingTextInputFormatter(13)],
+            keyboardType: TextInputType.emailAddress,
+            autofillHints: const [AutofillHints.username, AutofillHints.email],
             decoration: InputDecoration(
-              labelText: _staffLogin ? 'Email address' : 'CNIC',
-              hintText: _staffLogin ? 'admin@zabtec.edu.pk' : '3520212345671',
-              prefixIcon: Icon(
-                _staffLogin ? Icons.email_outlined : Icons.badge_outlined,
-              ),
-              counterText: '',
+              labelText: _strings.get('identifier'),
+              hintText: _strings.get('identifierHint'),
+              prefixIcon: const Icon(Icons.person_outline_rounded),
             ),
-            maxLength: _staffLogin ? null : 13,
-            validator: _staffLogin ? validateEmail : validateCnic,
+            validator: _validateLoginIdentifier,
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -189,7 +205,7 @@ class _AuthScreenState extends State<AuthScreen> {
             obscureText: !_showLoginPassword,
             autofillHints: const [AutofillHints.password],
             decoration: InputDecoration(
-              labelText: 'Password',
+              labelText: _strings.get('password'),
               prefixIcon: const Icon(Icons.lock_outline_rounded),
               suffixIcon: IconButton(
                 onPressed: () =>
@@ -199,22 +215,26 @@ class _AuthScreenState extends State<AuthScreen> {
                       ? Icons.visibility_off_outlined
                       : Icons.visibility_outlined,
                 ),
-                tooltip: _showLoginPassword ? 'Hide password' : 'Show password',
+                tooltip: _showLoginPassword
+                    ? _strings.get('hidePassword')
+                    : _strings.get('showPassword'),
               ),
             ),
-            validator: (value) => requiredText(value, 'Password'),
+            validator: (value) => value == null || value.isEmpty
+                ? _strings.get('passwordRequired')
+                : null,
             onFieldSubmitted: (_) => _login(),
           ),
           const SizedBox(height: 22),
           PrimaryButton(
-            label: _busy ? 'Signing in...' : 'Sign in',
+            label: _busy ? _strings.get('signingIn') : _strings.get('signIn'),
             icon: Icons.arrow_forward_rounded,
             onPressed: _busy ? null : _login,
           ),
           const SizedBox(height: 18),
           _SwitchPrompt(
-            prefix: 'Student applicant?',
-            action: 'Create account',
+            prefix: _strings.get('studentApplicant'),
+            action: _strings.get('createAccount'),
             onTap: _busy ? null : () => setState(() => _signup = true),
           ),
         ],
@@ -228,13 +248,13 @@ class _AuthScreenState extends State<AuthScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Create student account',
+          _strings.get('createStudentAccount'),
           style: Theme.of(context).textTheme.displaySmall,
         ),
         const SizedBox(height: 10),
-        const Text(
-          'Admin and HEC accounts are created from the admin portal.',
-          style: TextStyle(color: AppColors.muted),
+        Text(
+          _strings.get('signupHelp'),
+          style: const TextStyle(color: AppColors.muted),
         ),
         const SizedBox(height: 24),
         FormGrid(
@@ -243,15 +263,18 @@ class _AuthScreenState extends State<AuthScreen> {
               controller: _name,
               textCapitalization: TextCapitalization.words,
               autofillHints: const [AutofillHints.name],
-              decoration: const InputDecoration(
-                labelText: 'Full name',
-                hintText: 'Name as shown on CNIC',
-                prefixIcon: Icon(Icons.person_outline),
+              decoration: InputDecoration(
+                labelText: _strings.get('fullName'),
+                hintText: _strings.get('nameHint'),
+                prefixIcon: const Icon(Icons.person_outline),
               ),
               validator: (value) {
-                final required = requiredText(value, 'Full name');
-                if (required != null) return required;
-                if (value!.trim().length < 3) return 'Enter your complete name';
+                if (value == null || value.trim().isEmpty) {
+                  return _strings.get('completeName');
+                }
+                if (value.trim().length < 3) {
+                  return _strings.get('completeName');
+                }
                 return null;
               },
             ),
@@ -262,14 +285,16 @@ class _AuthScreenState extends State<AuthScreen> {
                 DigitsOnlyFormatter(),
                 LengthLimitingTextInputFormatter(13),
               ],
-              decoration: const InputDecoration(
-                labelText: 'CNIC',
-                hintText: '13 digits without dashes',
-                prefixIcon: Icon(Icons.badge_outlined),
+              decoration: InputDecoration(
+                labelText: _strings.get('cnic'),
+                hintText: _strings.get('cnicHint'),
+                prefixIcon: const Icon(Icons.badge_outlined),
                 counterText: '',
               ),
               maxLength: 13,
-              validator: validateCnic,
+              validator: (value) => validateCnic(value) == null
+                  ? null
+                  : _strings.get('cnicInvalid'),
             ),
             TextFormField(
               controller: _phone,
@@ -279,32 +304,36 @@ class _AuthScreenState extends State<AuthScreen> {
                 DigitsOnlyFormatter(),
                 LengthLimitingTextInputFormatter(10),
               ],
-              decoration: const InputDecoration(
-                labelText: 'Phone number',
+              decoration: InputDecoration(
+                labelText: _strings.get('phone'),
                 hintText: '3311234567',
                 prefixText: '+92  ',
-                prefixIcon: Icon(Icons.phone_outlined),
+                prefixIcon: const Icon(Icons.phone_outlined),
               ),
-              validator: validatePakPhone,
+              validator: (value) => validatePakPhone(value) == null
+                  ? null
+                  : _strings.get('phoneInvalid'),
             ),
             TextFormField(
               controller: _email,
               keyboardType: TextInputType.emailAddress,
               autofillHints: const [AutofillHints.email],
-              decoration: const InputDecoration(
-                labelText: 'Email address',
+              decoration: InputDecoration(
+                labelText: _strings.get('email'),
                 hintText: 'you@example.com',
-                prefixIcon: Icon(Icons.email_outlined),
+                prefixIcon: const Icon(Icons.email_outlined),
               ),
-              validator: validateEmail,
+              validator: (value) => validateEmail(value) == null
+                  ? null
+                  : _strings.get('emailInvalid'),
             ),
             TextFormField(
               controller: _password,
               obscureText: !_showSignupPassword,
               autofillHints: const [AutofillHints.newPassword],
               decoration: InputDecoration(
-                labelText: 'Password',
-                helperText: '8+ characters with upper, lower-case and number',
+                labelText: _strings.get('password'),
+                helperText: _strings.get('passwordHelp'),
                 prefixIcon: const Icon(Icons.lock_outline_rounded),
                 suffixIcon: IconButton(
                   onPressed: () => setState(
@@ -316,18 +345,20 @@ class _AuthScreenState extends State<AuthScreen> {
                         : Icons.visibility_outlined,
                   ),
                   tooltip: _showSignupPassword
-                      ? 'Hide password'
-                      : 'Show password',
+                      ? _strings.get('hidePassword')
+                      : _strings.get('showPassword'),
                 ),
               ),
-              validator: validatePassword,
+              validator: (value) => validatePassword(value) == null
+                  ? null
+                  : _strings.get('passwordInvalid'),
             ),
             TextFormField(
               controller: _confirmPassword,
               obscureText: !_showConfirmPassword,
               autofillHints: const [AutofillHints.newPassword],
               decoration: InputDecoration(
-                labelText: 'Confirm password',
+                labelText: _strings.get('confirmPassword'),
                 prefixIcon: const Icon(Icons.lock_reset_rounded),
                 suffixIcon: IconButton(
                   onPressed: () => setState(
@@ -339,14 +370,17 @@ class _AuthScreenState extends State<AuthScreen> {
                         : Icons.visibility_outlined,
                   ),
                   tooltip: _showConfirmPassword
-                      ? 'Hide password'
-                      : 'Show password',
+                      ? _strings.get('hidePassword')
+                      : _strings.get('showPassword'),
                 ),
               ),
               validator: (value) {
-                final required = requiredText(value, 'Password confirmation');
-                if (required != null) return required;
-                if (value != _password.text) return 'Passwords do not match';
+                if (value == null || value.isEmpty) {
+                  return _strings.get('confirmRequired');
+                }
+                if (value != _password.text) {
+                  return _strings.get('passwordsMismatch');
+                }
                 return null;
               },
             ),
@@ -354,14 +388,16 @@ class _AuthScreenState extends State<AuthScreen> {
         ),
         const SizedBox(height: 22),
         PrimaryButton(
-          label: _busy ? 'Creating account...' : 'Create account',
+          label: _busy
+              ? _strings.get('creatingAccount')
+              : _strings.get('createAccount'),
           icon: Icons.check_rounded,
           onPressed: _busy ? null : _register,
         ),
         const SizedBox(height: 18),
         _SwitchPrompt(
-          prefix: 'Already registered?',
-          action: 'Sign in',
+          prefix: _strings.get('alreadyRegistered'),
+          action: _strings.get('signIn'),
           onTap: _busy ? null : () => setState(() => _signup = false),
         ),
       ],
@@ -391,11 +427,13 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _login() async {
     if (!_loginKey.currentState!.validate()) return;
+    final identifier = _loginIdentifier.text.trim();
+    final isEmail = identifier.contains('@');
     setState(() => _busy = true);
     try {
       final session = await widget.api.login(
-        cnic: _staffLogin ? null : _loginIdentifier.text.trim(),
-        email: _staffLogin ? _loginIdentifier.text.trim() : null,
+        cnic: isEmail ? null : identifier,
+        email: isEmail ? identifier : null,
         password: _loginPassword.text,
       );
       widget.onAuthenticated(session);
@@ -411,9 +449,11 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _openLegalPage(String url, String label) async {
     try {
       final opened = await launchUrl(Uri.parse(url));
-      if (!opened) _showError('Could not open $label. Please try again.');
+      if (!opened) {
+        _showError(_strings.get('openFailed').replaceFirst('{page}', label));
+      }
     } catch (_) {
-      _showError('Could not open $label. Please try again.');
+      _showError(_strings.get('openFailed').replaceFirst('{page}', label));
     }
   }
 
@@ -427,14 +467,46 @@ class _AuthScreenState extends State<AuthScreen> {
   void _showConnectionError(Object error) {
     final details = error.toString().trim();
     _showError(
-      'Could not connect to the API at ${widget.api.baseUrl}. Please check your internet connection or ask support to confirm the live backend is available.${details.isEmpty ? '' : ' Details: $details'}',
+      '${_strings.get('connectionFailed')}${details.isEmpty ? '' : ' $details'}',
     );
+  }
+
+  String? _validateLoginIdentifier(String? value) {
+    final identifier = value?.trim() ?? '';
+    if (identifier.isEmpty) return _strings.get('identifierRequired');
+    final valid = identifier.contains('@')
+        ? validateEmail(identifier) == null
+        : validateCnic(identifier) == null;
+    return valid ? null : _strings.get('identifierInvalid');
+  }
+
+  Future<void> _loadLanguage() async {
+    final preferences = await SharedPreferences.getInstance();
+    final code = preferences.getString('app_language');
+    if (!mounted || code == null) return;
+    final language = AppLanguage.values.where((item) => item.code == code);
+    if (language.isNotEmpty) setState(() => _language = language.first);
+  }
+
+  Future<void> _setLanguage(AppLanguage language) async {
+    setState(() => _language = language);
+    final preferences = await SharedPreferences.getInstance();
+    await preferences.setString('app_language', language.code);
   }
 }
 
 class _LegalLinks extends StatelessWidget {
-  const _LegalLinks({required this.onTerms, required this.onPrivacy});
+  const _LegalLinks({
+    required this.notice,
+    required this.termsLabel,
+    required this.privacyLabel,
+    required this.onTerms,
+    required this.onPrivacy,
+  });
 
+  final String notice;
+  final String termsLabel;
+  final String privacyLabel;
   final VoidCallback onTerms;
   final VoidCallback onPrivacy;
 
@@ -447,10 +519,10 @@ class _LegalLinks extends StatelessWidget {
     );
     return Column(
       children: [
-        const Text(
-          'By continuing, you agree to our terms and acknowledge our privacy policy.',
+        Text(
+          notice,
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppColors.muted, fontSize: 12),
+          style: const TextStyle(color: AppColors.muted, fontSize: 12),
         ),
         const SizedBox(height: 6),
         Wrap(
@@ -460,12 +532,12 @@ class _LegalLinks extends StatelessWidget {
             TextButton(
               onPressed: onTerms,
               style: linkStyle,
-              child: const Text('Terms & Conditions'),
+              child: Text(termsLabel),
             ),
             TextButton(
               onPressed: onPrivacy,
               style: linkStyle,
-              child: const Text('Privacy Policy'),
+              child: Text(privacyLabel),
             ),
           ],
         ),
@@ -496,7 +568,9 @@ class _SwitchPrompt extends StatelessWidget {
 }
 
 class _AuthStory extends StatelessWidget {
-  const _AuthStory();
+  const _AuthStory({required this.strings});
+
+  final AuthStrings strings;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -506,43 +580,43 @@ class _AuthStory extends StatelessWidget {
       color: AppColors.deepBlue,
       borderRadius: BorderRadius.circular(32),
     ),
-    child: const Column(
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.school_rounded, color: Colors.white, size: 42),
-        SizedBox(height: 150),
+        const Icon(Icons.school_rounded, color: Colors.white, size: 42),
+        const SizedBox(height: 150),
         Text(
-          'One secure portal for students, HEC reviewers, and admins.',
-          style: TextStyle(
+          strings.get('storyTitle'),
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 34,
             height: 1.16,
             fontWeight: FontWeight.w800,
           ),
         ),
-        SizedBox(height: 18),
+        const SizedBox(height: 18),
         Text(
-          'Sign in securely, complete your application, upload documents, pay the activation fee, and track review decisions.',
-          style: TextStyle(
+          strings.get('storyBody'),
+          style: const TextStyle(
             color: Color(0xFFC1D9D1),
             fontSize: 16,
             height: 1.55,
           ),
         ),
-        SizedBox(height: 34),
+        const SizedBox(height: 34),
         _TrustLine(
           icon: Icons.verified_user_outlined,
-          text: 'JWT session with refresh tokens',
+          text: strings.get('secureSession'),
         ),
-        SizedBox(height: 14),
+        const SizedBox(height: 14),
         _TrustLine(
           icon: Icons.assignment_turned_in_outlined,
-          text: 'Live application status',
+          text: strings.get('liveStatus'),
         ),
-        SizedBox(height: 14),
+        const SizedBox(height: 14),
         _TrustLine(
           icon: Icons.admin_panel_settings_outlined,
-          text: 'Role-based portals after login',
+          text: strings.get('rolePortals'),
         ),
       ],
     ),
