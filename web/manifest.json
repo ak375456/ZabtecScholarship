@@ -5,7 +5,7 @@
     "display": "standalone",
     "background_color": "#F6F8FA",
     "theme_color": "#075DB7",
-    "description": "ZABTEC × HEC scholarship application portal for students across Pakistan.",
+    "description": "ZABTEC scholarship application and student services portal for students across Pakistan.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

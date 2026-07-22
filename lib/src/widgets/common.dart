@@ -4,8 +4,9 @@ import 'package:flutter/services.dart';
 import '../theme.dart';
 
 class BrandMark extends StatelessWidget {
-  const BrandMark({super.key, this.compact = false});
+  const BrandMark({super.key, this.compact = false, this.showHec = false});
   final bool compact;
+  final bool showHec;
 
   @override
   Widget build(BuildContext context) {
@@ -13,16 +14,36 @@ class BrandMark extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _LogoTile(path: 'assets/ZABTec, logo.jpg', size: size),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
-          child: Container(
-            width: 1,
-            height: size * .52,
-            color: AppColors.border,
-          ),
+        _LogoTile(path: 'assets/zabtec-app-icon-1024.png', size: size),
+        SizedBox(width: compact ? 10 : 14),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'ZABTEC',
+              style: TextStyle(
+                color: AppColors.deepBlue,
+                fontSize: compact ? 16 : 22,
+                fontWeight: FontWeight.w900,
+                letterSpacing: .5,
+              ),
+            ),
+            Text(
+              'Scholarships',
+              style: TextStyle(
+                color: AppColors.muted,
+                fontSize: compact ? 10 : 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
-        _LogoTile(path: 'assets/hec-logo.png', size: size),
+        if (showHec) ...[
+          SizedBox(width: compact ? 10 : 14),
+          Container(width: 1, height: size * .52, color: AppColors.border),
+          SizedBox(width: compact ? 10 : 14),
+          _LogoTile(path: 'assets/hec-logo.png', size: size),
+        ],
       ],
     );
   }

@@ -9,7 +9,7 @@ import '../models.dart';
 
 typedef SessionChanged = FutureOr<void> Function(AuthSession? session);
 
-const _productionApiBaseUrl = 'https://apizhsp.zabtec.co/api/v1';
+const _productionApiBaseUrl = 'https://apiapply.zabtec.co/api/v1';
 
 const _localNetworkApiBaseUrl = String.fromEnvironment(
   'LOCAL_NETWORK_API_BASE_URL',
@@ -60,6 +60,12 @@ class ApiClient {
 
     const configured = String.fromEnvironment('API_BASE_URL');
     if (configured.trim().isNotEmpty) return configured;
+
+    // Flutter web development should exercise the local backend by default.
+    // Release builds continue to use the hosted production API below.
+    if (kIsWeb && kDebugMode) {
+      return 'http://127.0.0.1:5000/api/v1';
+    }
 
     if (!kIsWeb && _localNetworkApiBaseUrl.trim().isNotEmpty) {
       return _localNetworkApiBaseUrl;
@@ -277,11 +283,74 @@ class ApiClient {
     }
   }
 
+  Future<ActivationReceipt> uploadPaymentProof(UploadFilePayload file) async {
+    final request = http.MultipartRequest(
+      'POST',
+      _uri('/student/payment/proof'),
+    );
+    request.headers.addAll(_authHeaders());
+    request.files.add(
+      http.MultipartFile.fromBytes(
+        'file',
+        file.bytes,
+        filename: file.filename,
+        contentType: _mediaTypeFor(file),
+      ),
+    );
+
+    final streamed = await request.send();
+    final response = await http.Response.fromStream(streamed);
+    final data = await _decodeResponse(
+      response,
+      retry: () => uploadPaymentProof(file),
+    );
+    if (data is ActivationReceipt) return data;
+    return ActivationReceipt.fromJson(_map(data), account: _requireUser());
+  }
+
+  Future<SupportThread> getStudentSupport() async =>
+      SupportThread.fromJson(await _jsonMap('GET', '/student/support'));
+
+  Future<SupportMessage> sendStudentSupportMessage(String message) async =>
+      SupportMessage.fromJson(
+        await _jsonMap(
+          'POST',
+          '/student/support/messages',
+          body: {'message': message.trim()},
+        ),
+      );
+
   Future<Map<String, dynamic>> adminDashboard() =>
       _jsonMap('GET', '/admin/dashboard');
 
   Future<Map<String, dynamic>> adminPaymentStats() =>
       _jsonMap('GET', '/admin/payment-stats');
+
+  Future<Map<String, dynamic>> adminPayments({
+    String? status,
+    String? search,
+    int page = 1,
+    int limit = 20,
+  }) => _jsonMap(
+    'GET',
+    '/admin/payments',
+    query: {'status': status, 'search': search, 'page': page, 'limit': limit},
+  );
+
+  Future<Map<String, dynamic>> adminReviewPayment(
+    String id, {
+    required String status,
+    String? rejectionReason,
+    String? reviewNotes,
+  }) {
+    final body = <String, dynamic>{'status': status};
+    if (rejectionReason != null) body['rejectionReason'] = rejectionReason;
+    if (reviewNotes != null) body['reviewNotes'] = reviewNotes;
+    return _jsonMap('PATCH', '/admin/payments/$id/review', body: body);
+  }
+
+  Future<Uint8List> adminPaymentProof(String id) =>
+      _binaryRequest('/admin/payments/$id/proof');
 
   Future<Map<String, dynamic>> adminApplications({
     String? status,
@@ -335,6 +404,42 @@ class ApiClient {
 
   Future<Map<String, dynamic>> adminToggleUserStatus(String id) =>
       _jsonMap('PATCH', '/admin/users/$id/toggle-status');
+
+  Future<List<SupportThread>> adminSupportThreads({
+    String? search,
+    String? status,
+  }) async {
+    final data = await _jsonMap(
+      'GET',
+      '/admin/support',
+      query: {'search': search, 'status': status, 'limit': 100},
+    );
+    return _list(
+      data['threads'],
+    ).map((item) => SupportThread.fromJson(_map(item))).toList();
+  }
+
+  Future<SupportThread> adminSupportThread(String id) async =>
+      SupportThread.fromJson(await _jsonMap('GET', '/admin/support/$id'));
+
+  Future<SupportMessage> sendAdminSupportMessage(
+    String id,
+    String message,
+  ) async => SupportMessage.fromJson(
+    await _jsonMap(
+      'POST',
+      '/admin/support/$id/messages',
+      body: {'message': message.trim()},
+    ),
+  );
+
+  Future<void> updateAdminSupportStatus(String id, String status) async {
+    await _jsonMap(
+      'PATCH',
+      '/admin/support/$id/status',
+      body: {'status': status},
+    );
+  }
 
   Future<Map<String, dynamic>> hecDashboard() =>
       _jsonMap('GET', '/hec/dashboard');
@@ -416,6 +521,34 @@ class ApiClient {
         allowRefresh: false,
       ),
     );
+  }
+
+  Future<Uint8List> _binaryRequest(
+    String path, {
+    bool allowRefresh = true,
+  }) async {
+    final request = http.Request('GET', _uri(path));
+    request.headers.addAll(_authHeaders());
+    final streamed = await _http.send(request);
+    final response = await http.Response.fromStream(streamed);
+
+    if (response.statusCode == 401 && allowRefresh) {
+      final refreshed = await _refreshSession();
+      if (refreshed) return _binaryRequest(path, allowRefresh: false);
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      Map<String, dynamic> json = const {};
+      try {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) json = _map(decoded);
+      } catch (_) {}
+      throw ApiException(
+        json['message']?.toString() ?? 'Could not load stamped challan',
+        statusCode: response.statusCode,
+        errors: _list(json['errors']),
+      );
+    }
+    return response.bodyBytes;
   }
 
   Future<dynamic> _decodeResponse(

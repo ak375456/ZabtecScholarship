@@ -7,9 +7,16 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>HEC scholarships</string>
+	<string>ZABTEC Scholarships</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Select profile and academic document images for your scholarship application.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to the ZABTEC development server running on this network.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Take profile and academic document photographs for your scholarship application.</string>
 	<key>CFBundleExecutable</key>
@@ -19,7 +26,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>HEC scholarships</string>
+	<string>ZABTEC Scholarships</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+
 import '../../models.dart';
+import '../../services/api_client.dart';
 import '../../services/receipt_pdf_service.dart';
 import '../../theme.dart';
 import '../../widgets/common.dart';
@@ -11,16 +14,19 @@ class ServicesSection extends StatefulWidget {
     required this.application,
     required this.progress,
     required this.receipt,
-    required this.onPaymentCompleted,
+    required this.onPaymentChanged,
     required this.onPayActivation,
+    required this.onUploadProof,
   });
 
   final Account account;
   final ScholarshipApplication? application;
   final ApplicationProgress progress;
   final ActivationReceipt? receipt;
-  final ValueChanged<ActivationReceipt> onPaymentCompleted;
+  final ValueChanged<ActivationReceipt> onPaymentChanged;
   final Future<ActivationReceipt> Function({String method}) onPayActivation;
+  final Future<ActivationReceipt> Function(UploadFilePayload file)
+  onUploadProof;
 
   @override
   State<ServicesSection> createState() => _ServicesSectionState();
@@ -30,6 +36,7 @@ class _ServicesSectionState extends State<ServicesSection>
     with AutomaticKeepAliveClientMixin {
   bool _savingPdf = false;
   bool _paying = false;
+  bool _uploadingProof = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -67,13 +74,15 @@ class _ServicesSectionState extends State<ServicesSection>
                               key: const ValueKey('payment-locked'),
                               missing: widget.progress.missingForPayment,
                             )
-                    : _UnlockedServicesCard(
-                        key: const ValueKey('services-unlocked'),
+                    : _ChallanStatusCard(
+                        key: ValueKey('challan-${widget.receipt!.status}'),
                         receipt: widget.receipt!,
                         application: widget.application,
                         progress: widget.progress,
                         savingPdf: _savingPdf,
+                        uploadingProof: _uploadingProof,
                         onSavePdf: _saveReceiptPdf,
+                        onUploadProof: _pickAndUploadProof,
                       ),
               ),
               const SizedBox(height: 20),
@@ -88,7 +97,7 @@ class _ServicesSectionState extends State<ServicesSection>
     setState(() => _paying = true);
     try {
       final receipt = await widget.onPayActivation(method: 'bank_transfer');
-      widget.onPaymentCompleted(receipt);
+      widget.onPaymentChanged(receipt);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -100,6 +109,49 @@ class _ServicesSectionState extends State<ServicesSection>
       );
     } finally {
       if (mounted) setState(() => _paying = false);
+    }
+  }
+
+  Future<void> _pickAndUploadProof() async {
+    if (_uploadingProof) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp'],
+      withData: true,
+    );
+    final selected = result?.files.single;
+    final bytes = selected?.bytes;
+    if (selected == null || bytes == null || !mounted) return;
+    if (bytes.lengthInBytes > 5 * 1024 * 1024) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Use an image smaller than 5 MB.')),
+      );
+      return;
+    }
+
+    setState(() => _uploadingProof = true);
+    try {
+      final payment = await widget.onUploadProof(
+        UploadFilePayload(
+          bytes: bytes,
+          filename: selected.name,
+          mimeType: _imageMimeType(selected.name),
+        ),
+      );
+      widget.onPaymentChanged(payment);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Stamped challan submitted for ZABTEC verification.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not upload stamped challan: $error')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingProof = false);
     }
   }
 
@@ -270,66 +322,46 @@ class _PaymentLockedCard extends StatelessWidget {
   );
 }
 
-class _UnlockedServicesCard extends StatelessWidget {
-  const _UnlockedServicesCard({
+class _ChallanStatusCard extends StatelessWidget {
+  const _ChallanStatusCard({
     super.key,
     required this.receipt,
     required this.application,
     required this.progress,
     required this.savingPdf,
+    required this.uploadingProof,
     required this.onSavePdf,
+    required this.onUploadProof,
   });
 
   final ActivationReceipt receipt;
   final ScholarshipApplication? application;
   final ApplicationProgress progress;
   final bool savingPdf;
+  final bool uploadingProof;
   final VoidCallback onSavePdf;
+  final VoidCallback onUploadProof;
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       FormCard(
-        title: 'Bank challan generated',
+        title: receipt.statusLabel,
         icon: Icons.receipt_long_outlined,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: AppColors.mint,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFCBE8DA)),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: AppColors.pakistanGreen,
-                  ),
-                  SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      'Your registration fee challan is ready. Save it and take it to Faysal Bank for deposit.',
-                      style: TextStyle(color: AppColors.ink, height: 1.45),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _PaymentStatusBanner(receipt: receipt),
             const SizedBox(height: 18),
             _ReceiptSummary(receipt: receipt, application: application),
             const SizedBox(height: 18),
-            Align(
-              alignment: Alignment.centerRight,
-              child: SizedBox(
-                width: MediaQuery.sizeOf(context).width < 520
-                    ? double.infinity
-                    : 250,
-                child: OutlinedButton.icon(
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                OutlinedButton.icon(
                   onPressed: savingPdf ? null : onSavePdf,
                   icon: savingPdf
                       ? const SizedBox(
@@ -340,7 +372,24 @@ class _UnlockedServicesCard extends StatelessWidget {
                       : const Icon(Icons.picture_as_pdf_outlined),
                   label: Text(savingPdf ? 'Saving PDF...' : 'Save challan PDF'),
                 ),
-              ),
+                if (receipt.canUploadProof)
+                  ElevatedButton.icon(
+                    onPressed: uploadingProof ? null : onUploadProof,
+                    icon: uploadingProof
+                        ? const SizedBox.square(
+                            dimension: 17,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.upload_file_rounded),
+                    label: Text(
+                      uploadingProof
+                          ? 'Uploading...'
+                          : receipt.isRejected
+                          ? 'Upload corrected copy'
+                          : 'Upload stamped challan',
+                    ),
+                  ),
+              ],
             ),
           ],
         ),
@@ -349,13 +398,15 @@ class _UnlockedServicesCard extends StatelessWidget {
       FormCard(
         title: 'Submission readiness',
         icon: Icons.fact_check_outlined,
-        child: progress.readyForSubmission
+        child: receipt.isApproved && progress.readyForSubmission
             ? const Text(
-                'All required sections are complete. You can submit the application from Home.',
+                'Your payment is approved. You can now submit the application from Home.',
                 style: TextStyle(color: AppColors.pakistanGreen, height: 1.45),
               )
             : Text(
-                'Still missing: ${progress.missingForSubmission.join(', ')}',
+                receipt.isApproved
+                    ? 'Still missing: ${progress.missingForSubmission.join(', ')}'
+                    : 'Application submission remains locked until ZABTEC approves the stamped challan.',
                 style: const TextStyle(color: AppColors.muted, height: 1.45),
               ),
       ),
@@ -387,7 +438,9 @@ class _ReceiptSummary extends StatelessWidget {
           'Due date',
           _formatDate(receipt.issuedAt.add(const Duration(days: 7))),
         ),
-        _summaryRow('Status', 'Challan generated'),
+        _summaryRow('Status', receipt.statusLabel),
+        if (receipt.proofOriginalName != null)
+          _summaryRow('Uploaded copy', receipt.proofOriginalName!),
       ],
     ),
   );
@@ -431,4 +484,75 @@ class _ReceiptSummary extends StatelessWidget {
     final local = value.toLocal();
     return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year}';
   }
+}
+
+class _PaymentStatusBanner extends StatelessWidget {
+  const _PaymentStatusBanner({required this.receipt});
+
+  final ActivationReceipt receipt;
+
+  @override
+  Widget build(BuildContext context) {
+    final (background, border, icon, color, message) = receipt.isApproved
+        ? (
+            AppColors.mint,
+            const Color(0xFFCBE8DA),
+            Icons.verified_rounded,
+            AppColors.pakistanGreen,
+            'ZABTEC has verified your bank-stamped challan. Your payment step is complete.',
+          )
+        : receipt.isPendingReview
+        ? (
+            const Color(0xFFFFF7E8),
+            const Color(0xFFFFE0A8),
+            Icons.hourglass_top_rounded,
+            const Color(0xFFA66200),
+            'Your stamped challan is pending ZABTEC verification. You will be able to continue after approval.',
+          )
+        : receipt.isRejected
+        ? (
+            const Color(0xFFFFF1F1),
+            const Color(0xFFF2C0C0),
+            Icons.cancel_outlined,
+            AppColors.danger,
+            'ZABTEC rejected this copy: ${receipt.rejectionReason ?? 'Please upload a clear bank-stamped challan.'}',
+          )
+        : (
+            const Color(0xFFEAF3FB),
+            const Color(0xFFC9DFF0),
+            Icons.account_balance_outlined,
+            AppColors.zaptecBlue,
+            'Save the challan, pay it at Faysal Bank, then upload a clear image of the bank-stamped copy.',
+          );
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: AppColors.ink, height: 1.45),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String? _imageMimeType(String filename) {
+  final lower = filename.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  return null;
 }

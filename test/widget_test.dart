@@ -14,6 +14,10 @@ import 'package:zabtec_scholarship/src/services/api_client.dart';
 import 'package:zabtec_scholarship/src/widgets/common.dart';
 
 void main() {
+  test('API client defaults to the live production backend', () {
+    expect(ApiClient().baseUrl, 'https://apiapply.zabtec.co/api/v1');
+  });
+
   testWidgets('app opens the unified backend login screen', (tester) async {
     SharedPreferences.setMockInitialValues({});
 
@@ -21,12 +25,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Sign in'), findsWidgets);
-    expect(find.text('CNIC or email address'), findsOneWidget);
+    expect(find.text('CNIC'), findsOneWidget);
     expect(find.text('Student'), findsNothing);
     expect(find.text('HEC / Admin'), findsNothing);
   });
 
-  testWidgets('login uses one identifier field for every role', (tester) async {
+  testWidgets('login presents a student-only sign-in experience', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: AuthScreen(
@@ -37,13 +43,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('CNIC or email address'), findsOneWidget);
+    expect(find.text('CNIC'), findsOneWidget);
     expect(
       find.text(
-        'Students enter a CNIC. HEC and admin users enter an email address.',
+        'Enter your CNIC and password to access your scholarship application.',
       ),
       findsOneWidget,
     );
+    expect(find.textContaining('HEC'), findsNothing);
+    expect(find.textContaining('admin'), findsNothing);
   });
 
   testWidgets('authentication supports five languages', (tester) async {
@@ -67,7 +75,7 @@ void main() {
     await tester.tap(find.text('Français').last);
     await tester.pumpAndSettle();
     expect(find.text('Se connecter'), findsWidgets);
-    expect(find.text('CNIC ou adresse e-mail'), findsOneWidget);
+    expect(find.text('CNIC'), findsOneWidget);
   });
 
   testWidgets('student signup requests password confirmation', (tester) async {
@@ -133,7 +141,9 @@ void main() {
     expect(find.text('Bachelor’s certificate'), findsOneWidget);
   });
 
-  testWidgets('services unlock after backend payment callback', (tester) async {
+  testWidgets('challan generation waits for stamped-copy approval', (
+    tester,
+  ) async {
     final progress = ApplicationProgress()
       ..personal = true
       ..family = true
@@ -152,10 +162,7 @@ void main() {
               application: null,
               progress: progress,
               receipt: receipt,
-              onPaymentCompleted: (value) => setState(() {
-                receipt = value;
-                progress.payment = true;
-              }),
+              onPaymentChanged: (value) => setState(() => receipt = value),
               onPayActivation: ({method = 'bank_transfer'}) async =>
                   ActivationReceipt(
                     receiptNumber: '2606170000303',
@@ -165,6 +172,7 @@ void main() {
                     paymentMethod: method,
                     cardLast4: '',
                   ),
+              onUploadProof: (_) async => receipt!,
             ),
           ),
         ),
@@ -177,8 +185,10 @@ void main() {
     await tester.tap(find.text('Generate challan'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Bank challan generated'), findsOneWidget);
+    expect(find.text('Awaiting bank payment'), findsWidgets);
     expect(find.text('Save challan PDF'), findsOneWidget);
+    expect(find.text('Upload stamped challan'), findsOneWidget);
+    expect(progress.payment, isFalse);
   });
 
   testWidgets('profile separates permanent and current address', (
@@ -251,6 +261,23 @@ void main() {
     );
 
     expect(receipt.amountLabel, 'PKR 1,500');
+  });
+
+  test('payment unlocks only after ZABTEC approval', () {
+    ActivationReceipt payment(String status) => ActivationReceipt(
+      receiptNumber: '2606170000303',
+      account: _account,
+      issuedAt: DateTime(2026, 6, 25),
+      amountPkr: 1500,
+      paymentMethod: 'bank_transfer',
+      cardLast4: '',
+      status: status,
+    );
+
+    expect(payment('awaiting_payment').isApproved, isFalse);
+    expect(payment('proof_submitted').isApproved, isFalse);
+    expect(payment('rejected').isApproved, isFalse);
+    expect(payment('approved').isApproved, isTrue);
   });
 
   test('includes the official district dataset by region', () {

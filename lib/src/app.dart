@@ -32,7 +32,7 @@ class _ScholarshipAppState extends State<ScholarshipApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'HEC scholarships',
+      title: 'ZABTEC Scholarships',
       debugShowCheckedModeBanner: false,
       theme: buildAppTheme(),
       home: _buildHome(),

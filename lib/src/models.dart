@@ -318,8 +318,13 @@ class ActivationReceipt {
     required this.paymentMethod,
     required this.cardLast4,
     this.currency = 'PKR',
-    this.status = 'completed',
+    this.status = 'awaiting_payment',
     this.applicationNumber,
+    this.proofOriginalName,
+    this.proofMimeType,
+    this.proofSubmittedAt,
+    this.rejectionReason,
+    this.reviewedAt,
   });
 
   final String receiptNumber;
@@ -331,6 +336,25 @@ class ActivationReceipt {
   final String cardLast4;
   final String status;
   final String? applicationNumber;
+  final String? proofOriginalName;
+  final String? proofMimeType;
+  final DateTime? proofSubmittedAt;
+  final String? rejectionReason;
+  final DateTime? reviewedAt;
+
+  bool get isApproved => status == 'approved' || status == 'completed';
+  bool get isPendingReview => status == 'proof_submitted';
+  bool get isRejected => status == 'rejected';
+  bool get canUploadProof =>
+      status == 'awaiting_payment' || status == 'pending' || isRejected;
+  bool get hasProof => proofOriginalName?.isNotEmpty == true;
+
+  String get statusLabel => switch (status) {
+    'approved' || 'completed' => 'Payment approved',
+    'proof_submitted' => 'Pending ZABTEC verification',
+    'rejected' => 'Stamped challan rejected',
+    _ => 'Awaiting bank payment',
+  };
 
   String get amountLabel => '$currency ${_formatAmount(amountPkr)}';
   String get challanNumber {
@@ -350,18 +374,26 @@ class ActivationReceipt {
   factory ActivationReceipt.fromJson(
     Map<String, dynamic> json, {
     required Account account,
-  }) => ActivationReceipt(
-    receiptNumber: _string(json['receiptNumber']),
-    account: account,
-    issuedAt:
-        _date(json['paidAt']) ?? _date(json['createdAt']) ?? DateTime.now(),
-    amountPkr: _int(json['amount'], fallback: 1500),
-    currency: _string(json['currency'], fallback: 'PKR'),
-    paymentMethod: _string(json['method'], fallback: 'bank_transfer'),
-    cardLast4: _string(json['cardLast4']),
-    status: _string(json['status'], fallback: 'completed'),
-    applicationNumber: _nullableString(json['applicationNumber']),
-  );
+  }) {
+    final proof = _map(json['proof']);
+    return ActivationReceipt(
+      receiptNumber: _string(json['receiptNumber']),
+      account: account,
+      issuedAt:
+          _date(json['createdAt']) ?? _date(json['paidAt']) ?? DateTime.now(),
+      amountPkr: _int(json['amount'], fallback: 1500),
+      currency: _string(json['currency'], fallback: 'PKR'),
+      paymentMethod: _string(json['method'], fallback: 'bank_transfer'),
+      cardLast4: _string(json['cardLast4']),
+      status: _string(json['status'], fallback: 'awaiting_payment'),
+      applicationNumber: _nullableString(json['applicationNumber']),
+      proofOriginalName: _nullableString(proof['originalName']),
+      proofMimeType: _nullableString(proof['mimeType']),
+      proofSubmittedAt: _date(proof['uploadedAt']),
+      rejectionReason: _nullableString(json['rejectionReason']),
+      reviewedAt: _date(json['reviewedAt']),
+    );
+  }
 
   static String _formatAmount(int value) {
     final text = value.toString();
@@ -372,6 +404,75 @@ class ActivationReceipt {
       if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write(',');
     }
     return buffer.toString();
+  }
+}
+
+class SupportMessage {
+  const SupportMessage({
+    required this.id,
+    required this.body,
+    required this.senderRole,
+    required this.createdAt,
+    this.senderName,
+  });
+
+  final String id;
+  final String body;
+  final String senderRole;
+  final DateTime createdAt;
+  final String? senderName;
+
+  bool get isFromStudent => senderRole == 'student';
+
+  factory SupportMessage.fromJson(Map<String, dynamic> json) {
+    final sender = _map(json['sender']);
+    return SupportMessage(
+      id: _string(json['_id'] ?? json['id']),
+      body: _string(json['body']),
+      senderRole: _string(json['senderRole'], fallback: 'admin'),
+      createdAt: _date(json['createdAt']) ?? DateTime.now(),
+      senderName: _nullableString(sender['fullName']),
+    );
+  }
+}
+
+class SupportThread {
+  const SupportThread({
+    required this.id,
+    required this.status,
+    required this.messages,
+    required this.unreadForAdmin,
+    required this.unreadForStudent,
+    this.student,
+    this.lastMessageAt,
+    this.lastMessagePreview = '',
+  });
+
+  final String id;
+  final String status;
+  final Account? student;
+  final List<SupportMessage> messages;
+  final int unreadForAdmin;
+  final int unreadForStudent;
+  final DateTime? lastMessageAt;
+  final String lastMessagePreview;
+
+  bool get isClosed => status == 'closed';
+
+  factory SupportThread.fromJson(Map<String, dynamic> json) {
+    final student = json['student'];
+    return SupportThread(
+      id: _string(json['_id'] ?? json['id']),
+      status: _string(json['status'], fallback: 'open'),
+      student: student is Map ? Account.fromJson(_map(student)) : null,
+      messages: _list(
+        json['messages'],
+      ).map((item) => SupportMessage.fromJson(_map(item))).toList(),
+      unreadForAdmin: _int(json['unreadForAdmin']),
+      unreadForStudent: _int(json['unreadForStudent']),
+      lastMessageAt: _date(json['lastMessageAt']),
+      lastMessagePreview: _string(json['lastMessagePreview']),
+    );
   }
 }
 

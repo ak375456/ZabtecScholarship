@@ -27,11 +27,11 @@ class AuthStrings {
       'signIn': 'Sign in',
       'signingIn': 'Signing in...',
       'loginHelp':
-          'Students enter a CNIC. HEC and admin users enter an email address.',
-      'identifier': 'CNIC or email address',
-      'identifierHint': '3520212345671 or name@example.com',
-      'identifierRequired': 'Enter your CNIC or email address',
-      'identifierInvalid': 'Enter a valid 13-digit CNIC or email address',
+          'Enter your CNIC and password to access your scholarship application.',
+      'identifier': 'CNIC',
+      'identifierHint': '3520212345671',
+      'identifierRequired': 'Enter your CNIC',
+      'identifierInvalid': 'Enter a valid 13-digit CNIC',
       'password': 'Password',
       'passwordRequired': 'Enter Password',
       'showPassword': 'Show password',
@@ -40,7 +40,8 @@ class AuthStrings {
       'createAccount': 'Create account',
       'createStudentAccount': 'Create student account',
       'creatingAccount': 'Creating account...',
-      'signupHelp': 'Admin and HEC accounts are created from the admin portal.',
+      'signupHelp':
+          'Create your account to begin your scholarship application.',
       'fullName': 'Full name',
       'nameHint': 'Name as shown on CNIC',
       'completeName': 'Enter your complete name',
@@ -64,25 +65,23 @@ class AuthStrings {
       'openFailed': 'Could not open {page}. Please try again.',
       'connectionFailed':
           'Could not connect to the service. Check your internet connection or contact support.',
-      'storyTitle':
-          'One secure portal for students, HEC reviewers, and admins.',
+      'storyTitle': 'Your scholarship application, all in one secure portal.',
       'storyBody':
           'Sign in securely, complete your application, upload documents, pay the activation fee, and track review decisions.',
       'secureSession': 'Secure account session',
       'liveStatus': 'Live application status',
-      'rolePortals': 'Role-based portals after login',
+      'rolePortals': 'Simple, guided application process',
     },
     AppLanguage.urdu: {
       'language': 'زبان',
       'signIn': 'سائن اِن',
       'signingIn': 'سائن اِن ہو رہا ہے...',
       'loginHelp':
-          'طلبہ شناختی کارڈ نمبر درج کریں۔ HEC اور ایڈمن صارفین ای میل درج کریں۔',
-      'identifier': 'شناختی کارڈ نمبر یا ای میل',
-      'identifierHint': '3520212345671 یا name@example.com',
-      'identifierRequired': 'اپنا شناختی کارڈ نمبر یا ای میل درج کریں',
-      'identifierInvalid':
-          'درست 13 ہندسوں کا شناختی کارڈ نمبر یا ای میل درج کریں',
+          'اپنی اسکالرشپ درخواست تک رسائی کے لیے شناختی کارڈ نمبر اور پاس ورڈ درج کریں۔',
+      'identifier': 'شناختی کارڈ نمبر',
+      'identifierHint': '3520212345671',
+      'identifierRequired': 'اپنا شناختی کارڈ نمبر درج کریں',
+      'identifierInvalid': 'درست 13 ہندسوں کا شناختی کارڈ نمبر درج کریں',
       'password': 'پاس ورڈ',
       'passwordRequired': 'پاس ورڈ درج کریں',
       'showPassword': 'پاس ورڈ دکھائیں',
@@ -91,7 +90,7 @@ class AuthStrings {
       'createAccount': 'اکاؤنٹ بنائیں',
       'createStudentAccount': 'طالب علم کا اکاؤنٹ بنائیں',
       'creatingAccount': 'اکاؤنٹ بنایا جا رہا ہے...',
-      'signupHelp': 'ایڈمن اور HEC اکاؤنٹس ایڈمن پورٹل سے بنائے جاتے ہیں۔',
+      'signupHelp': 'اپنی اسکالرشپ درخواست شروع کرنے کے لیے اکاؤنٹ بنائیں۔',
       'fullName': 'پورا نام',
       'nameHint': 'شناختی کارڈ کے مطابق نام',
       'completeName': 'اپنا پورا نام درج کریں',
@@ -116,24 +115,23 @@ class AuthStrings {
       'openFailed': '{page} نہیں کھل سکا۔ دوبارہ کوشش کریں۔',
       'connectionFailed':
           'سروس سے رابطہ نہیں ہو سکا۔ انٹرنیٹ چیک کریں یا سپورٹ سے رابطہ کریں۔',
-      'storyTitle': 'طلبہ، HEC جائزہ کاروں اور ایڈمن کے لیے ایک محفوظ پورٹل۔',
+      'storyTitle': 'آپ کی اسکالرشپ درخواست کے لیے ایک محفوظ پورٹل۔',
       'storyBody':
           'محفوظ طریقے سے سائن اِن کریں، درخواست مکمل کریں، دستاویزات اپ لوڈ کریں اور پیش رفت دیکھیں۔',
       'secureSession': 'محفوظ اکاؤنٹ سیشن',
       'liveStatus': 'درخواست کی تازہ صورتحال',
-      'rolePortals': 'سائن اِن کے بعد کردار کے مطابق پورٹل',
+      'rolePortals': 'آسان اور رہنمائی والا درخواست کا عمل',
     },
     AppLanguage.italian: {
       'language': 'Lingua',
       'signIn': 'Accedi',
       'signingIn': 'Accesso in corso...',
       'loginHelp':
-          'Gli studenti inseriscono il CNIC. Gli utenti HEC e admin inseriscono un indirizzo email.',
-      'identifier': 'CNIC o indirizzo email',
-      'identifierHint': '3520212345671 o nome@esempio.com',
-      'identifierRequired': 'Inserisci il CNIC o l’indirizzo email',
-      'identifierInvalid':
-          'Inserisci un CNIC valido di 13 cifre o un indirizzo email valido',
+          'Inserisci il CNIC e la password per accedere alla tua domanda di borsa di studio.',
+      'identifier': 'CNIC',
+      'identifierHint': '3520212345671',
+      'identifierRequired': 'Inserisci il CNIC',
+      'identifierInvalid': 'Inserisci un CNIC valido di 13 cifre',
       'password': 'Password',
       'passwordRequired': 'Inserisci la password',
       'showPassword': 'Mostra password',
@@ -143,7 +141,7 @@ class AuthStrings {
       'createStudentAccount': 'Crea un account studente',
       'creatingAccount': 'Creazione account...',
       'signupHelp':
-          'Gli account admin e HEC vengono creati dal portale amministrativo.',
+          'Crea il tuo account per iniziare la domanda di borsa di studio.',
       'fullName': 'Nome completo',
       'nameHint': 'Nome riportato sul CNIC',
       'completeName': 'Inserisci il nome completo',
@@ -169,24 +167,23 @@ class AuthStrings {
       'connectionFailed':
           'Impossibile connettersi al servizio. Controlla Internet o contatta l’assistenza.',
       'storyTitle':
-          'Un portale sicuro per studenti, revisori HEC e amministratori.',
+          'La tua domanda di borsa di studio in un unico portale sicuro.',
       'storyBody':
           'Accedi in sicurezza, completa la domanda, carica i documenti e monitora le decisioni.',
       'secureSession': 'Sessione account sicura',
       'liveStatus': 'Stato della domanda in tempo reale',
-      'rolePortals': 'Portali basati sul ruolo dopo l’accesso',
+      'rolePortals': 'Procedura di candidatura semplice e guidata',
     },
     AppLanguage.azerbaijani: {
       'language': 'Dil',
       'signIn': 'Daxil ol',
       'signingIn': 'Daxil olunur...',
       'loginHelp':
-          'Tələbələr CNIC, HEC və admin istifadəçiləri isə e-poçt ünvanı daxil edir.',
-      'identifier': 'CNIC və ya e-poçt ünvanı',
-      'identifierHint': '3520212345671 və ya ad@example.com',
-      'identifierRequired': 'CNIC və ya e-poçt ünvanınızı daxil edin',
-      'identifierInvalid':
-          'Etibarlı 13 rəqəmli CNIC və ya e-poçt ünvanı daxil edin',
+          'Təqaüd müraciətinizə daxil olmaq üçün CNIC və şifrənizi daxil edin.',
+      'identifier': 'CNIC',
+      'identifierHint': '3520212345671',
+      'identifierRequired': 'CNIC-i daxil edin',
+      'identifierInvalid': 'Etibarlı 13 rəqəmli CNIC daxil edin',
       'password': 'Şifrə',
       'passwordRequired': 'Şifrəni daxil edin',
       'showPassword': 'Şifrəni göstər',
@@ -195,7 +192,7 @@ class AuthStrings {
       'createAccount': 'Hesab yarat',
       'createStudentAccount': 'Tələbə hesabı yarat',
       'creatingAccount': 'Hesab yaradılır...',
-      'signupHelp': 'Admin və HEC hesabları admin portalından yaradılır.',
+      'signupHelp': 'Təqaüd müraciətinizə başlamaq üçün hesab yaradın.',
       'fullName': 'Tam ad',
       'nameHint': 'CNIC-də göstərilən ad',
       'completeName': 'Tam adınızı daxil edin',
@@ -220,25 +217,23 @@ class AuthStrings {
       'openFailed': '{page} açıla bilmədi. Yenidən cəhd edin.',
       'connectionFailed':
           'Xidmətə qoşulmaq mümkün olmadı. İnterneti yoxlayın və ya dəstəklə əlaqə saxlayın.',
-      'storyTitle':
-          'Tələbələr, HEC rəyçiləri və adminlər üçün vahid təhlükəsiz portal.',
+      'storyTitle': 'Təqaüd müraciətiniz üçün vahid təhlükəsiz portal.',
       'storyBody':
           'Təhlükəsiz daxil olun, müraciəti tamamlayın, sənədləri yükləyin və qərarları izləyin.',
       'secureSession': 'Təhlükəsiz hesab sessiyası',
       'liveStatus': 'Canlı müraciət statusu',
-      'rolePortals': 'Girişdən sonra rola uyğun portallar',
+      'rolePortals': 'Sadə və yönləndirilən müraciət prosesi',
     },
     AppLanguage.french: {
       'language': 'Langue',
       'signIn': 'Se connecter',
       'signingIn': 'Connexion...',
       'loginHelp':
-          'Les étudiants saisissent un CNIC. Les utilisateurs HEC et admin saisissent une adresse e-mail.',
-      'identifier': 'CNIC ou adresse e-mail',
-      'identifierHint': '3520212345671 ou nom@exemple.com',
-      'identifierRequired': 'Saisissez votre CNIC ou votre adresse e-mail',
-      'identifierInvalid':
-          'Saisissez un CNIC valide à 13 chiffres ou une adresse e-mail valide',
+          'Saisissez votre CNIC et votre mot de passe pour accéder à votre demande de bourse.',
+      'identifier': 'CNIC',
+      'identifierHint': '3520212345671',
+      'identifierRequired': 'Saisissez votre CNIC',
+      'identifierInvalid': 'Saisissez un CNIC valide à 13 chiffres',
       'password': 'Mot de passe',
       'passwordRequired': 'Saisissez le mot de passe',
       'showPassword': 'Afficher le mot de passe',
@@ -248,7 +243,7 @@ class AuthStrings {
       'createStudentAccount': 'Créer un compte étudiant',
       'creatingAccount': 'Création du compte...',
       'signupHelp':
-          'Les comptes admin et HEC sont créés depuis le portail administrateur.',
+          'Créez votre compte pour commencer votre demande de bourse.',
       'fullName': 'Nom complet',
       'nameHint': 'Nom figurant sur le CNIC',
       'completeName': 'Saisissez votre nom complet',
@@ -275,12 +270,12 @@ class AuthStrings {
       'connectionFailed':
           'Impossible de se connecter au service. Vérifiez Internet ou contactez l’assistance.',
       'storyTitle':
-          'Un portail sécurisé pour les étudiants, les évaluateurs HEC et les administrateurs.',
+          'Votre demande de bourse dans un portail unique et sécurisé.',
       'storyBody':
           'Connectez-vous en toute sécurité, complétez votre demande, téléversez vos documents et suivez les décisions.',
       'secureSession': 'Session de compte sécurisée',
       'liveStatus': 'Statut de la demande en direct',
-      'rolePortals': 'Portails adaptés au rôle après connexion',
+      'rolePortals': 'Une procédure de candidature simple et guidée',
     },
   };
 }

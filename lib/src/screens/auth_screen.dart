@@ -107,7 +107,10 @@ class _AuthScreenState extends State<AuthScreen> {
                                   children: [
                                     Flexible(child: _languagePicker()),
                                     const SizedBox(width: 16),
-                                    const BrandMark(compact: true),
+                                    const BrandMark(
+                                      compact: true,
+                                      showHec: true,
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 34),
@@ -615,7 +618,7 @@ class _AuthStory extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         _TrustLine(
-          icon: Icons.admin_panel_settings_outlined,
+          icon: Icons.route_outlined,
           text: strings.get('rolePortals'),
         ),
       ],

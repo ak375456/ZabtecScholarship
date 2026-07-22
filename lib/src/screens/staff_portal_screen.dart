@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../models.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import 'admin_support_panel.dart';
 
 class StaffPortalScreen extends StatefulWidget {
   const StaffPortalScreen({
@@ -32,6 +35,7 @@ class _StaffPortalScreenState extends State<StaffPortalScreen> {
           (Icons.school_outlined, 'Students'),
           (Icons.people_outline, 'Users'),
           (Icons.payments_outlined, 'Payments'),
+          (Icons.forum_outlined, 'Support chats'),
         ]
       : const [
           (Icons.dashboard_outlined, 'Dashboard'),
@@ -49,6 +53,7 @@ class _StaffPortalScreenState extends State<StaffPortalScreen> {
             _StudentsPanel(api: widget.api),
             _UsersPanel(api: widget.api),
             _PaymentsPanel(api: widget.api),
+            AdminSupportPanel(api: widget.api),
           ]
         : [
             _HecDashboard(api: widget.api),
@@ -955,26 +960,374 @@ class _PaymentsPanel extends StatefulWidget {
 }
 
 class _PaymentsPanelState extends State<_PaymentsPanel> {
-  late Future<Map<String, dynamic>> _future = widget.api.adminPaymentStats();
+  final _search = TextEditingController();
+  String _status = 'proof_submitted';
+  late Future<Map<String, dynamic>> _future = _load();
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) => _FuturePanel(
-    title: 'Payment stats',
+    title: 'Challan verification',
     future: _future,
-    onRefresh: () => setState(() => _future = widget.api.adminPaymentStats()),
-    builder: (data) => _MetricGrid(
-      cards: [
-        _MetricData(
-          'Revenue PKR',
-          data['totalRevenuePKR'] ?? 0,
-          Icons.payments,
+    onRefresh: _refresh,
+    header: FormCard(
+      title: 'Find payment submissions',
+      icon: Icons.filter_alt_outlined,
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.end,
+        children: [
+          SizedBox(
+            width: 300,
+            child: TextField(
+              controller: _search,
+              decoration: const InputDecoration(
+                labelText: 'Student name, CNIC or email',
+                prefixIcon: Icon(Icons.search_rounded),
+              ),
+              onSubmitted: (_) => _refresh(),
+            ),
+          ),
+          SizedBox(
+            width: 230,
+            child: DropdownButtonFormField<String>(
+              initialValue: _status,
+              decoration: const InputDecoration(labelText: 'Payment status'),
+              items: const [
+                DropdownMenuItem(
+                  value: 'proof_submitted',
+                  child: Text('Pending verification'),
+                ),
+                DropdownMenuItem(
+                  value: 'awaiting_payment',
+                  child: Text('Awaiting payment'),
+                ),
+                DropdownMenuItem(value: 'approved', child: Text('Approved')),
+                DropdownMenuItem(value: 'rejected', child: Text('Rejected')),
+                DropdownMenuItem(value: '', child: Text('All statuses')),
+              ],
+              onChanged: (value) {
+                _status = value ?? '';
+                _refresh();
+              },
+            ),
+          ),
+          ElevatedButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.search_rounded),
+            label: const Text('Apply'),
+          ),
+        ],
+      ),
+    ),
+    builder: (data) {
+      final payments = _list(data['payments']);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _MetricGrid(
+            cards: [
+              _MetricData(
+                'Approved revenue PKR',
+                data['totalRevenuePKR'] ?? 0,
+                Icons.payments,
+              ),
+              _MetricData(
+                'Approved',
+                data['approvedPayments'] ?? 0,
+                Icons.check_circle,
+              ),
+              _MetricData(
+                'Pending verification',
+                data['pendingReview'] ?? 0,
+                Icons.fact_check_outlined,
+              ),
+              _MetricData(
+                'Awaiting payment',
+                data['awaitingPayment'] ?? 0,
+                Icons.hourglass_empty_rounded,
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          if (payments.isEmpty)
+            const _EmptyState(
+              message: 'No challan submissions match this filter.',
+            )
+          else
+            ...payments.map(
+              (item) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _PaymentReviewCard(
+                  api: widget.api,
+                  payment: _map(item),
+                  onReviewed: _refresh,
+                ),
+              ),
+            ),
+        ],
+      );
+    },
+  );
+
+  Future<Map<String, dynamic>> _load() async {
+    final results = await Future.wait<Map<String, dynamic>>([
+      widget.api.adminPaymentStats(),
+      widget.api.adminPayments(
+        status: _status.isEmpty ? null : _status,
+        search: _search.text.trim(),
+      ),
+    ]);
+    return {
+      ...results[0],
+      'payments': results[1]['payments'],
+      'pagination': results[1]['pagination'],
+    };
+  }
+
+  void _refresh() => setState(() => _future = _load());
+}
+
+class _PaymentReviewCard extends StatelessWidget {
+  const _PaymentReviewCard({
+    required this.api,
+    required this.payment,
+    required this.onReviewed,
+  });
+
+  final ApiClient api;
+  final Map<String, dynamic> payment;
+  final VoidCallback onReviewed;
+
+  @override
+  Widget build(BuildContext context) {
+    final student = _map(payment['student']);
+    final application = _map(payment['application']);
+    final proof = _map(payment['proof']);
+    final status = _normalizedPaymentStatus(payment['status']?.toString());
+    final canReview = status == 'proof_submitted' && proof.isNotEmpty;
+
+    return FormCard(
+      title: student['fullName']?.toString() ?? 'Student payment',
+      icon: Icons.receipt_long_outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Wrap(
+            spacing: 18,
+            runSpacing: 8,
+            children: [
+              _PaymentDetail('CNIC', student['cnic']),
+              _PaymentDetail('Application', application['applicationNumber']),
+              _PaymentDetail('Challan', payment['receiptNumber']),
+              _PaymentDetail('Amount', 'PKR ${payment['amount'] ?? 1500}'),
+              _PaymentDetail('Status', _paymentStatusLabel(status)),
+              if (proof['uploadedAt'] != null)
+                _PaymentDetail('Uploaded', _dateTimeLabel(proof['uploadedAt'])),
+            ],
+          ),
+          if (payment['rejectionReason'] != null) ...[
+            const SizedBox(height: 14),
+            Text(
+              'Rejection reason: ${payment['rejectionReason']}',
+              style: const TextStyle(
+                color: AppColors.danger,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          const SizedBox(height: 18),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.end,
+            children: [
+              if (proof.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: () => _showProof(context),
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('View stamped challan'),
+                ),
+              if (canReview)
+                OutlinedButton.icon(
+                  onPressed: () => _reject(context),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Reject'),
+                ),
+              if (canReview)
+                ElevatedButton.icon(
+                  onPressed: () => _approve(context),
+                  icon: const Icon(Icons.verified_rounded),
+                  label: const Text('Approve payment'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showProof(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Bank-stamped challan'),
+        content: SizedBox(
+          width: 760,
+          height: MediaQuery.sizeOf(dialogContext).height * 0.72,
+          child: FutureBuilder<Uint8List>(
+            future: api.adminPaymentProof(payment['_id'].toString()),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snapshot.hasError || snapshot.data == null) {
+                return Center(
+                  child: Text('Could not load image: ${snapshot.error}'),
+                );
+              }
+              return InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 5,
+                child: Center(
+                  child: Image.memory(snapshot.data!, fit: BoxFit.contain),
+                ),
+              );
+            },
+          ),
         ),
-        _MetricData(
-          'Completed',
-          data['completedPayments'] ?? 0,
-          Icons.check_circle,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _approve(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Approve this payment?'),
+        content: const Text(
+          'This will mark the fee as verified and unlock application submission for the student.',
         ),
-        _MetricData('Pending', data['pendingPayments'] ?? 0, Icons.pending),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Approve'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && context.mounted) {
+      await _review(context, status: 'approved');
+    }
+  }
+
+  Future<void> _reject(BuildContext context) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Reject stamped challan'),
+          content: TextField(
+            controller: controller,
+            minLines: 3,
+            maxLines: 5,
+            decoration: const InputDecoration(
+              labelText: 'Reason for the student',
+              hintText: 'For example: bank stamp is not clear',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isNotEmpty) Navigator.pop(dialogContext, value);
+              },
+              child: const Text('Reject'),
+            ),
+          ],
+        );
+      },
+    );
+    if (reason != null && context.mounted) {
+      await _review(context, status: 'rejected', rejectionReason: reason);
+    }
+  }
+
+  Future<void> _review(
+    BuildContext context, {
+    required String status,
+    String? rejectionReason,
+  }) async {
+    try {
+      await api.adminReviewPayment(
+        payment['_id'].toString(),
+        status: status,
+        rejectionReason: rejectionReason,
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            status == 'approved'
+                ? 'Payment approved.'
+                : 'Stamped challan rejected.',
+          ),
+        ),
+      );
+      onReviewed();
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not review payment: $error')),
+      );
+    }
+  }
+}
+
+class _PaymentDetail extends StatelessWidget {
+  const _PaymentDetail(this.label, this.value);
+
+  final String label;
+  final Object? value;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 210,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(color: AppColors.muted, fontSize: 12),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value?.toString() ?? '-',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
       ],
     ),
   );
@@ -1269,6 +1622,29 @@ Map<String, dynamic> _map(Object? value) {
 }
 
 List<dynamic> _list(Object? value) => value is List ? value : const [];
+
+String _normalizedPaymentStatus(String? status) => switch (status) {
+  'completed' => 'approved',
+  'pending' => 'awaiting_payment',
+  _ => status ?? 'awaiting_payment',
+};
+
+String _paymentStatusLabel(String status) => switch (status) {
+  'approved' => 'Approved',
+  'proof_submitted' => 'Pending verification',
+  'rejected' => 'Rejected',
+  _ => 'Awaiting payment',
+};
+
+String _dateTimeLabel(Object? value) {
+  final parsed = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
+  if (parsed == null) return '-';
+  final date =
+      '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year}';
+  final time =
+      '${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
+  return '$date $time';
+}
 
 String _summarize(Map<String, dynamic> map) {
   final student = _map(map['student']);

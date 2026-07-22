@@ -4,6 +4,7 @@ import '../models.dart';
 import '../services/api_client.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
+import '../widgets/student_support_sheet.dart';
 import 'sections/documents_section.dart';
 import 'sections/education_section.dart';
 import 'sections/experience_section.dart';
@@ -41,13 +42,16 @@ class _PortalScreenState extends State<PortalScreen> {
 
   static const _items = [
     (Icons.home_outlined, 'Home'),
-    (Icons.person_outline_rounded, 'Profile'),
+    (Icons.person_outline_rounded, 'Personal'),
     (Icons.family_restroom_rounded, 'Family'),
     (Icons.school_outlined, 'Education'),
     (Icons.work_outline_rounded, 'Experience'),
     (Icons.science_outlined, 'Research'),
     (Icons.folder_copy_outlined, 'Documents'),
     (Icons.receipt_long_outlined, 'Challan'),
+    (Icons.translate_rounded, 'Language classes'),
+    (Icons.workspace_premium_outlined, 'Scholarships'),
+    (Icons.account_balance_outlined, 'Universities'),
   ];
 
   ApplicationProgress get _progress =>
@@ -125,11 +129,74 @@ class _PortalScreenState extends State<PortalScreen> {
         application: _application,
         progress: _progress,
         receipt: _activationReceipt,
-        onPaymentCompleted: (receipt) => setState(() {
+        onPaymentChanged: (receipt) => setState(() {
           _activationReceipt = receipt;
-          _application?.progress.payment = true;
         }),
         onPayActivation: _payActivation,
+        onUploadProof: _uploadPaymentProof,
+      ),
+      _OpportunitySection(
+        title: 'Language classes',
+        description:
+            'Build the language skills required for study and scholarship opportunities.',
+        icon: Icons.translate_rounded,
+        unlocked: _progress.servicesUnlocked,
+        entries: const [
+          (
+            'English proficiency',
+            'Academic communication and interview preparation',
+          ),
+          (
+            'IELTS preparation',
+            'Practice material, schedules and learning guidance',
+          ),
+          (
+            'German language A1',
+            'Foundation lessons for international pathways',
+          ),
+        ],
+      ),
+      _OpportunitySection(
+        title: 'Scholarships',
+        description:
+            'Explore scholarship opportunities matched to your completed profile.',
+        icon: Icons.workspace_premium_outlined,
+        unlocked: _progress.servicesUnlocked,
+        entries: const [
+          (
+            'Merit opportunities',
+            'Academic merit scholarships and application guidance',
+          ),
+          (
+            'Need-based funding',
+            'Funding opportunities based on financial need',
+          ),
+          (
+            'International pathways',
+            'Scholarship options for partner destinations',
+          ),
+        ],
+      ),
+      _OpportunitySection(
+        title: 'Universities',
+        description:
+            'Review institutions, eligibility guidance and future admission deadlines.',
+        icon: Icons.account_balance_outlined,
+        unlocked: _progress.servicesUnlocked,
+        entries: const [
+          (
+            'Partner universities',
+            'Discover institutions available through ZABTEC',
+          ),
+          (
+            'Eligibility guidance',
+            'Compare your profile with entry requirements',
+          ),
+          (
+            'Admission planning',
+            'Prepare documents and important application dates',
+          ),
+        ],
       ),
     ];
 
@@ -172,6 +239,26 @@ class _PortalScreenState extends State<PortalScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w800),
               ),
         actions: [
+          if (wide)
+            TextButton.icon(
+              onPressed: () {},
+              icon: const Icon(Icons.download_outlined),
+              label: const Text('Download manual'),
+            )
+          else
+            IconButton(
+              onPressed: () {},
+              tooltip: 'Download manual',
+              icon: const Icon(Icons.download_outlined),
+            ),
+          IconButton(
+            onPressed: () {},
+            tooltip: 'Announcements',
+            icon: const Badge(
+              label: Text('3'),
+              child: Icon(Icons.notifications_none_rounded),
+            ),
+          ),
           IconButton(
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.sync_rounded),
@@ -224,6 +311,11 @@ class _PortalScreenState extends State<PortalScreen> {
             child: IndexedStack(index: _index, children: pages),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => showStudentSupportSheet(context, api: widget.api),
+        icon: const Icon(Icons.support_agent_rounded),
+        label: const Text('Customer support'),
       ),
     );
   }
@@ -287,6 +379,12 @@ class _PortalScreenState extends State<PortalScreen> {
     final receipt = await widget.api.processPayment(method: method);
     await _load();
     return receipt;
+  }
+
+  Future<ActivationReceipt> _uploadPaymentProof(UploadFilePayload file) async {
+    final payment = await widget.api.uploadPaymentProof(file);
+    await _load();
+    return payment;
   }
 
   Future<void> _submitApplication() async {
@@ -367,7 +465,7 @@ class _PortalScreenState extends State<PortalScreen> {
   ];
 
   ApplicationProgress _effectiveProgress(ApplicationProgress source) {
-    final paid = source.payment || _activationReceipt != null;
+    final paid = source.payment || (_activationReceipt?.isApproved ?? false);
     return ApplicationProgress(
       personal: source.personal,
       family: source.family,
@@ -420,7 +518,7 @@ Set<String> _educationDocumentTypes(
   return types;
 }
 
-class _PortalMenu extends StatelessWidget {
+class _PortalMenu extends StatefulWidget {
   const _PortalMenu({
     required this.account,
     required this.selectedIndex,
@@ -439,7 +537,14 @@ class _PortalMenu extends StatelessWidget {
   final Future<void> Function() onDeleteAccount;
   final bool deletingAccount;
 
+  @override
+  State<_PortalMenu> createState() => _PortalMenuState();
+}
+
+class _PortalMenuState extends State<_PortalMenu> {
   static const _items = _PortalScreenState._items;
+  late bool _profileExpanded =
+      widget.selectedIndex >= 1 && widget.selectedIndex <= 6;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -459,7 +564,7 @@ class _PortalMenu extends StatelessWidget {
               CircleAvatar(
                 backgroundColor: AppColors.deepBlue,
                 child: Text(
-                  account.initials,
+                  widget.account.initials,
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w800,
@@ -472,13 +577,13 @@ class _PortalMenu extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      account.fullName,
+                      widget.account.fullName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     Text(
-                      '${progress.percent}% complete',
+                      '${widget.progress.percent}% complete',
                       style: const TextStyle(
                         color: AppColors.muted,
                         fontSize: 11,
@@ -492,41 +597,72 @@ class _PortalMenu extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         Expanded(
-          child: ListView.builder(
+          child: ListView(
             padding: EdgeInsets.zero,
-            itemCount: _items.length,
-            itemBuilder: (context, index) => Padding(
-              padding: const EdgeInsets.only(bottom: 5),
-              child: ListTile(
-                onTap: () => onSelected(index),
-                selected: selectedIndex == index,
-                selectedTileColor: const Color(0xFFEAF3FB),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                leading: Icon(
-                  _items[index].$1,
-                  color: selectedIndex == index
-                      ? AppColors.zaptecBlue
-                      : AppColors.muted,
-                ),
-                title: Text(
-                  _items[index].$2,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: selectedIndex == index
-                        ? AppColors.deepBlue
+            children: [
+              _menuTile(0),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: ExpansionTile(
+                  initiallyExpanded: _profileExpanded,
+                  onExpansionChanged: (value) =>
+                      setState(() => _profileExpanded = value),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  collapsedShape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  backgroundColor: const Color(0xFFF7FAFC),
+                  collapsedBackgroundColor:
+                      widget.selectedIndex >= 1 && widget.selectedIndex <= 6
+                      ? const Color(0xFFEAF3FB)
+                      : Colors.transparent,
+                  leading: Icon(
+                    Icons.person_outline_rounded,
+                    color:
+                        widget.selectedIndex >= 1 && widget.selectedIndex <= 6
+                        ? AppColors.zaptecBlue
                         : AppColors.muted,
                   ),
+                  title: Text(
+                    'Profile',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color:
+                          widget.selectedIndex >= 1 && widget.selectedIndex <= 6
+                          ? AppColors.deepBlue
+                          : AppColors.muted,
+                    ),
+                  ),
+                  children: [
+                    for (var index = 1; index <= 6; index++)
+                      _menuTile(index, nested: true),
+                  ],
                 ),
-                trailing: _trailingFor(index),
               ),
-            ),
+              _menuTile(7),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(12, 14, 12, 7),
+                child: Text(
+                  'STUDENT SERVICES',
+                  style: TextStyle(
+                    color: AppColors.muted,
+                    fontSize: 10,
+                    letterSpacing: 1.1,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              _menuTile(8, locked: !widget.progress.servicesUnlocked),
+              _menuTile(9, locked: !widget.progress.servicesUnlocked),
+              _menuTile(10, locked: !widget.progress.servicesUnlocked),
+            ],
           ),
         ),
         const Divider(),
         ListTile(
-          onTap: onLogout,
+          onTap: widget.onLogout,
           leading: const Icon(Icons.logout_rounded, color: AppColors.muted),
           title: const Text(
             'Sign out',
@@ -540,8 +676,8 @@ class _PortalMenu extends StatelessWidget {
           ),
         ),
         ListTile(
-          onTap: deletingAccount ? null : onDeleteAccount,
-          leading: deletingAccount
+          onTap: widget.deletingAccount ? null : widget.onDeleteAccount,
+          leading: widget.deletingAccount
               ? const SizedBox.square(
                   dimension: 22,
                   child: CircularProgressIndicator(
@@ -552,7 +688,7 @@ class _PortalMenu extends StatelessWidget {
               : const Icon(Icons.delete_forever_outlined),
           iconColor: AppColors.danger,
           title: Text(
-            deletingAccount ? 'Deleting account...' : 'Delete account',
+            widget.deletingAccount ? 'Deleting account...' : 'Delete account',
             style: const TextStyle(
               color: AppColors.danger,
               fontWeight: FontWeight.w700,
@@ -566,14 +702,61 @@ class _PortalMenu extends StatelessWidget {
     ),
   );
 
+  Widget _menuTile(int index, {bool nested = false, bool locked = false}) {
+    final selected = widget.selectedIndex == index;
+    return Padding(
+      padding: EdgeInsets.only(bottom: 5, left: nested ? 18 : 0),
+      child: ListTile(
+        dense: nested,
+        visualDensity: nested ? VisualDensity.compact : VisualDensity.standard,
+        onTap: locked
+            ? () => ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'This service unlocks after your fee is submitted and approved by ZABTEC.',
+                  ),
+                ),
+              )
+            : () => widget.onSelected(index),
+        selected: selected,
+        selectedTileColor: const Color(0xFFEAF3FB),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(13)),
+        leading: Icon(
+          _items[index].$1,
+          size: nested ? 20 : 24,
+          color: locked
+              ? const Color(0xFFA4ADB7)
+              : selected
+              ? AppColors.zaptecBlue
+              : AppColors.muted,
+        ),
+        title: Text(
+          _items[index].$2,
+          style: TextStyle(
+            fontSize: nested ? 13 : null,
+            fontWeight: FontWeight.w700,
+            color: locked
+                ? const Color(0xFFA4ADB7)
+                : selected
+                ? AppColors.deepBlue
+                : AppColors.muted,
+          ),
+        ),
+        trailing: locked
+            ? const Icon(Icons.lock_outline_rounded, size: 17)
+            : _trailingFor(index),
+      ),
+    );
+  }
+
   bool _completeFor(int index) => switch (index) {
-    1 => progress.personal,
-    2 => progress.family,
-    3 => progress.education,
-    4 => progress.experience,
-    5 => progress.research,
-    6 => progress.documents,
-    7 => progress.payment,
+    1 => widget.progress.personal,
+    2 => widget.progress.family,
+    3 => widget.progress.education,
+    4 => widget.progress.experience,
+    5 => widget.progress.research,
+    6 => widget.progress.documents,
+    7 => widget.progress.payment,
     _ => false,
   };
 
@@ -654,6 +837,8 @@ class DashboardSection extends StatelessWidget {
                   onOpenPayment: onOpenPayment,
                   onSubmit: onSubmit,
                 ),
+                const SizedBox(height: 18),
+                _DashboardUpdates(progress: progress),
                 const SizedBox(height: 26),
                 _ApplicationSummary(
                   application: application,
@@ -667,6 +852,261 @@ class DashboardSection extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DashboardUpdates extends StatelessWidget {
+  const _DashboardUpdates({required this.progress});
+  final ApplicationProgress progress;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 760;
+      final announcements = FormCard(
+        title: 'Announcements',
+        icon: Icons.campaign_outlined,
+        child: const Column(
+          children: [
+            _AnnouncementRow(
+              title: 'Scholarship portal applications are open',
+              detail:
+                  'Demo announcement • Review your profile before submission',
+              color: AppColors.zaptecBlue,
+            ),
+            Divider(height: 24),
+            _AnnouncementRow(
+              title: 'Upload a clear bank-stamped challan',
+              detail: 'Demo announcement • Images are reviewed by ZABTEC admin',
+              color: AppColors.leafGreen,
+            ),
+            Divider(height: 24),
+            _AnnouncementRow(
+              title: 'Keep your academic records updated',
+              detail: 'Demo announcement • Check documents before submitting',
+              color: Color(0xFFE39B19),
+            ),
+          ],
+        ),
+      );
+      final access = FormCard(
+        title: 'Student services',
+        icon: progress.servicesUnlocked
+            ? Icons.lock_open_rounded
+            : Icons.lock_outline_rounded,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              progress.servicesUnlocked
+                  ? 'Language classes, scholarships and universities are now available.'
+                  : 'These services unlock after ZABTEC approves your submitted fee.',
+              style: const TextStyle(color: AppColors.muted),
+            ),
+            const SizedBox(height: 16),
+            for (final entry in const [
+              (Icons.translate_rounded, 'Language classes'),
+              (Icons.workspace_premium_outlined, 'Scholarships'),
+              (Icons.account_balance_outlined, 'Universities'),
+            ])
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    Icon(entry.$1, color: AppColors.zaptecBlue, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        entry.$2,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Icon(
+                      progress.servicesUnlocked
+                          ? Icons.check_circle
+                          : Icons.lock_outline_rounded,
+                      size: 18,
+                      color: progress.servicesUnlocked
+                          ? AppColors.leafGreen
+                          : AppColors.muted,
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+
+      if (compact) {
+        return Column(
+          children: [announcements, const SizedBox(height: 18), access],
+        );
+      }
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(flex: 2, child: announcements),
+          const SizedBox(width: 18),
+          Expanded(child: access),
+        ],
+      );
+    },
+  );
+}
+
+class _AnnouncementRow extends StatelessWidget {
+  const _AnnouncementRow({
+    required this.title,
+    required this.detail,
+    required this.color,
+  });
+
+  final String title;
+  final String detail;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Container(
+        width: 9,
+        height: 9,
+        margin: const EdgeInsets.only(top: 6),
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 3),
+            Text(
+              detail,
+              style: const TextStyle(color: AppColors.muted, fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+class _OpportunitySection extends StatelessWidget {
+  const _OpportunitySection({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.unlocked,
+    required this.entries,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final bool unlocked;
+  final List<(String, String)> entries;
+
+  @override
+  Widget build(BuildContext context) => SingleChildScrollView(
+    padding: EdgeInsets.all(MediaQuery.sizeOf(context).width < 520 ? 18 : 32),
+    child: Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 960),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(
+              eyebrow: 'Student services',
+              title: title,
+              description: description,
+            ),
+            const SizedBox(height: 24),
+            if (!unlocked)
+              FormCard(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 34),
+                    child: Column(
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEAF3FB),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.lock_outline_rounded,
+                            color: AppColors.deepBlue,
+                            size: 34,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Text(
+                          'Fee approval required',
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                        const SizedBox(height: 8),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 520),
+                          child: const Text(
+                            'Submit your bank-stamped challan and wait for ZABTEC admin approval. This service will unlock automatically after approval.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.muted),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              )
+            else ...[
+              for (final entry in entries)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: FormCard(
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEAF3FB),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(icon, color: AppColors.zaptecBlue),
+                        ),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                entry.$1,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                entry.$2,
+                                style: const TextStyle(color: AppColors.muted),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Chip(label: Text('Coming soon')),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _StatusCard extends StatelessWidget {
@@ -722,9 +1162,11 @@ class _StatusCard extends StatelessWidget {
               if (receipt != null) ...[
                 const SizedBox(height: 10),
                 Text(
-                  'Challan ${receipt!.challanNumber}',
-                  style: const TextStyle(
-                    color: AppColors.pakistanGreen,
+                  'Challan ${receipt!.challanNumber} • ${receipt!.statusLabel}',
+                  style: TextStyle(
+                    color: receipt!.isApproved
+                        ? AppColors.pakistanGreen
+                        : AppColors.muted,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -819,7 +1261,7 @@ class _ApplicationSummary extends StatelessWidget {
         _MetricCard(
           icon: Icons.receipt_long_outlined,
           label: 'Challan',
-          value: receipt == null ? 'Pending' : 'Generated',
+          value: receipt?.statusLabel ?? 'Not generated',
         ),
       ];
       return Wrap(
